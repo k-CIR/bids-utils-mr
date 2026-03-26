@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Project Explorer</title>
+  <style>
+    body {
+      font-family: monospace;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 2rem;
+      margin: 0;
+    }
+    h1 { color: #9cdcfe; font-size: 1.2rem; margin-bottom: 1.5rem; }
+    button {
+      background: #0e639c;
+      color: #fff;
+      border: none;
+      padding: 0.5rem 1.2rem;
+      font-size: 1rem;
+      font-family: monospace;
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    button:hover { background: #1177bb; }
+    button:disabled { background: #555; cursor: not-allowed; }
+    #output {
+      margin-top: 1.5rem;
+      background: #252526;
+      border: 1px solid #3c3c3c;
+      border-radius: 4px;
+      padding: 1rem;
+      white-space: pre-wrap;
+      min-height: 6rem;
+      line-height: 1.6;
+    }
+    .error { color: #f48771; }
+  </style>
+</head>
+<body>
+  <h1>&#x1F4C2; Project Folder</h1>
+  <button id="btn" onclick="runLs()">Run ls</button>
+  <div id="output">Output will appear here…</div>
+
+  <script>
+    async function runLs() {
+      const btn = document.getElementById('btn');
+      const out = document.getElementById('output');
+      btn.disabled = true;
+      out.className = '';
+      out.textContent = 'Running…';
+      try {
+        const resp = await fetch('/run-ls');
+        if (!resp.ok) throw new Error(`Server error: ${resp.status}`);
+        const data = await resp.json();
+        out.textContent = data.output || '(no output)';
+      } catch (err) {
+        out.className = 'error';
+        out.textContent = 'Error: ' + err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>

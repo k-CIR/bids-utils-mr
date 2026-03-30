@@ -7,9 +7,58 @@ import os
 import re
 import shutil
 import sys
+import socket
+import time
 from urllib.parse import urlparse, parse_qs
+import base64
+import hashlib
+import hmac
+import secrets
+import signal
+import atexit
 
 PORT = int(os.environ.get("PORT", 8080))
+AUTH_TOKEN = os.environ.get("AUTH_TOKEN") or secrets.token_urlsafe(16)
+
+# Global server reference for cleanup
+_httpd = None
+
+def cleanup_server():
+    """Clean up server on exit."""
+    global _httpd
+    if _httpd:
+        try:
+            _httpd.server_close()
+            # Only print if not already shutting down via signal
+            if not getattr(cleanup_server, '_called_by_signal', False):
+                print(f"\nServer stopped cleanly on port {PORT}")
+        except Exception:
+            pass
+
+def signal_handler(signum, frame):
+    """Handle termination signals."""
+    print(f"\nRemote received signal {signum}, shutting down...")
+    print()
+    # Mark that we're shutting down via signal to avoid duplicate messages
+    cleanup_server._called_by_signal = True
+    global _httpd
+    if _httpd:
+        try:
+            _httpd.server_close()
+            print(f"Server stopped cleanly on port {PORT}")
+            print()
+        except Exception:
+            pass
+    sys.exit(0)
+
+# Register cleanup handlers
+atexit.register(cleanup_server)
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+
+# Simple rate limiting
+_request_times = {}
+_RATE_LIMIT = 10  # max requests per minute per IP
 
 # Paths derived from the location of this script file
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -50,6 +99,53 @@ def _find_executable(name):
 _DCM2BIDS_HELPER = _find_executable("dcm2bids_helper")
 
 
+def _check_port_available(port):
+    """Check if a port is available."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("localhost", port))
+        sock.close()
+        return True
+    except OSError:
+        return False
+
+
+def _find_available_port(start_port=8080, max_attempts=10):
+    """Find an available port starting from start_port."""
+    for i in range(max_attempts):
+        port = start_port + i
+        if _check_port_available(port):
+            return port
+    return None
+
+
+def _rate_limit_check(client_ip):
+    """Simple rate limiting: max 10 requests per minute per IP."""
+    now = time.time()
+    if client_ip in _request_times:
+        _request_times[client_ip] = [t for t in _request_times[client_ip] if now - t < 60]
+        if len(_request_times[client_ip]) >= _RATE_LIMIT:
+            return False
+        _request_times[client_ip].append(now)
+    else:
+        _request_times[client_ip] = [now]
+    return True
+
+
+def _check_auth(request_path, query_params):
+    """Check if request is authenticated with valid token."""
+    # Allow access to main page without token for login
+    if request_path == '/' or request_path == '/index.html':
+        return True
+    
+    # Check for token in query parameters
+    token = query_params.get('token', [None])[0]
+    if token and hmac.compare_digest(token, AUTH_TOKEN):
+        return True
+    
+    return False
+
+
 def _get_default_helper_path():
     """Return (rel_path, warning) for the first session in ../raw/mri."""
     if not os.path.isdir(_RAW_MRI_DIR):
@@ -83,34 +179,83 @@ def _get_default_helper_path():
     return os.path.relpath(first_abs, PROJECT_ROOT), None
 
 
+class ReuseAddrHTTPServer(http.server.HTTPServer):
+    """HTTPServer that allows socket reuse to avoid TIME_WAIT issues."""
+    def server_bind(self):
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        super().server_bind()
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
-
+    
     def do_GET(self):
-        if self.path == "/run-ls":
-            result = subprocess.run(
-                ["ls", "-la"],
-                capture_output=True,
-                text=True,
-                cwd=os.getcwd(),
-            )
-            self._send_json({"output": result.stdout + result.stderr})
+        # Rate limiting
+        client_ip = self.client_address[0]
+        if not _rate_limit_check(client_ip):
+            self.send_error(429, "Too many requests")
+            return
+        
+        # Parse URL and query parameters
+        parsed_url = urlparse(self.path)
+        query_params = parse_qs(parsed_url.query)
+        
+        # Check authentication for protected endpoints
+        if not _check_auth(parsed_url.path, query_params):
+            self._send_auth_error()
+            return
+            
+        if parsed_url.path == "/run-ls":
+            # Restrict ls to current directory only for security
+            try:
+                result = subprocess.run(
+                    ["ls", "-la", "."],  # Explicitly list current dir only
+                    capture_output=True,
+                    text=True,
+                    cwd=os.getcwd(),
+                    timeout=10,  # Prevent hanging
+                )
+                self._send_json({"output": result.stdout + result.stderr})
+            except subprocess.TimeoutExpired:
+                self.send_error(408, "Request timeout")
+            except Exception as e:
+                self.send_error(500, f"Command failed: {str(e)}")
 
-        elif self.path == "/get-config":
+        elif parsed_url.path == "/get-config":
             default_path, warning = _get_default_helper_path()
             self._send_json({
                 "project_root": PROJECT_ROOT,
                 "default_path": default_path,
                 "warning": warning,
+                "auth_token": AUTH_TOKEN,  # Send token to authenticated client
             })
 
-        elif self.path.startswith("/run-dcm2bids-helper"):
-            self._handle_dcm2bids_helper()
+        elif parsed_url.path == "/run-dcm2bids-helper":
+            self._handle_dcm2bids_helper(query_params)
 
         else:
             super().do_GET()
 
-    def _handle_dcm2bids_helper(self):
-        params = parse_qs(urlparse(self.path).query)
+    def _send_auth_error(self):
+        """Send authentication error response."""
+        body = """
+        <!DOCTYPE html>
+        <html><head><title>Authentication Required</title></head>
+        <body style="font-family: monospace; text-align: center; margin-top: 100px;">
+        <h2>Authentication Required</h2>
+        <p>Please provide a valid authentication token.</p>
+        <form method="get" action="/">
+            <input type="password" name="token" placeholder="Enter token" style="padding: 8px; width: 200px;" />
+            <button type="submit" style="padding: 8px 16px;">Access</button>
+        </form>
+        </body></html>
+        """
+        self.send_response(401)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body.encode())
+
+    def _handle_dcm2bids_helper(self, params):
         rel_path = params.get("path", [None])[0]
         if not rel_path:
             self.send_error(400, "Missing path parameter")
@@ -157,10 +302,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 stderr=subprocess.STDOUT,
                 text=True,
             )
-            for line in proc.stdout:
-                emit({"line": line.rstrip("\n")})
-            proc.wait()
-            rc = proc.returncode
+            # Add timeout to prevent hanging
+            try:
+                for line in proc.stdout:
+                    emit({"line": line.rstrip("\n")})
+                proc.wait(timeout=300)  # 5 minute timeout
+                rc = proc.returncode
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                emit({"line": "Error: Process timed out (5 minutes)"})
+                rc = 1
         except FileNotFoundError:
             emit({"line": f"Error: could not launch {_DCM2BIDS_HELPER}"})
             rc = 1
@@ -183,6 +334,31 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    with http.server.HTTPServer(("localhost", PORT), Handler) as httpd:
-        print(f"Serving at http://localhost:{PORT}  (Ctrl+C to stop)")
-        httpd.serve_forever()
+    # Check if requested port is available, find alternative if not
+    if not _check_port_available(PORT):
+        print(f"Warning: Port {PORT} is already in use")
+        alternative_port = _find_available_port(PORT)
+        if alternative_port:
+            print(f"Using alternative port {alternative_port}")
+            PORT = alternative_port
+        else:
+            print("Error: No available ports found")
+            print("Try: sudo lsof -i :8080 to see what's using the port")
+            sys.exit(1)
+    
+    try:
+        _httpd = ReuseAddrHTTPServer(("localhost", PORT), Handler)
+        # Clean, colored output to match desired format
+        print(f"Process ID: {os.getpid()}")
+        print(f"Authentication token: {AUTH_TOKEN}")
+        print()
+        print(f"\033[1;32mAccess URL: http://localhost:{PORT}/?token={AUTH_TOKEN}\033[0m")
+        print()
+        print("Ctrl+C to stop process and close tunnel")
+        print()
+        _httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nServer stopped by user")
+    except Exception as e:
+        print(f"Server error: {e}")
+        sys.exit(1)

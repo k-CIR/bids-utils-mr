@@ -187,6 +187,26 @@
   </div>
 
   <script>
+    /* ── Global token storage ── */
+    let authToken = null;
+    
+    /* ── Authentication helpers ── */
+    function getTokenFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('token');
+    }
+    
+    function addTokenToUrl(url) {
+      if (!authToken) return url;
+      const separator = url.includes('?') ? '&' : '?';
+      return url + separator + 'token=' + encodeURIComponent(authToken);
+    }
+    
+    function handleAuthError() {
+      alert('Authentication failed. Please refresh and enter a valid token.');
+      window.location.href = '/';
+    }
+
     /* ── Tab switching ── */
     function switchTab(name) {
       document.querySelectorAll('.tab-btn').forEach(b =>
@@ -198,10 +218,31 @@
       document.getElementById('tab-' + name).classList.add('active');
     }
 
-    /* ── On load: fetch config from server ── */
+    /* ── On load: get token and fetch config from server ── */
     window.addEventListener('DOMContentLoaded', async () => {
+      // Get token from URL if provided
+      authToken = getTokenFromUrl();
+      
       try {
-        const cfg = await fetch('/get-config').then(r => r.json());
+        const configUrl = authToken ? '/get-config?token=' + encodeURIComponent(authToken) : '/get-config';
+        const response = await fetch(configUrl);
+        
+        if (response.status === 401) {
+          handleAuthError();
+          return;
+        }
+        
+        const cfg = await response.json();
+        
+        // Store token from server if not already set
+        if (!authToken && cfg.auth_token) {
+          authToken = cfg.auth_token;
+          // Update URL to include token for future refreshes
+          const newUrl = new URL(window.location);
+          newUrl.searchParams.set('token', authToken);
+          window.history.replaceState({}, '', newUrl);
+        }
+        
         document.getElementById('path-static').textContent = cfg.project_root;
         if (cfg.warning) {
           const w = document.getElementById('path-warn');
@@ -211,7 +252,11 @@
         if (cfg.default_path) {
           document.getElementById('helper-path').value = cfg.default_path;
         }
-      } catch (_) { /* ignore */ }
+      } catch (e) {
+        console.error('Failed to load config:', e);
+        document.getElementById('path-warn').textContent = '⚠ Failed to connect to server';
+        document.getElementById('path-warn').style.display = '';
+      }
     });
 
     /* ── Stream dcm2bids_helper output via SSE ── */
@@ -234,9 +279,8 @@
       out.innerHTML = '';
 
       const force = document.getElementById('force-check').checked ? '1' : '0';
-      activeSource = new EventSource(
-        '/run-dcm2bids-helper?path=' + encodeURIComponent(relPath) + '&force=' + force
-      );
+      const url = '/run-dcm2bids-helper?path=' + encodeURIComponent(relPath) + '&force=' + force;
+      activeSource = new EventSource(addTokenToUrl(url));
 
       activeSource.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
@@ -270,7 +314,12 @@
         activeSource = null;
         btn.disabled = false;
         btn.textContent = 'Analyze DICOM fields';
-        out.innerHTML += '<span class="t-err">\nConnection error.</span>'; // unexpected network drop
+        // Check if it's an auth error (EventSource doesn't give us status codes)
+        if (!authToken) {
+          out.innerHTML += '<span class="t-err">\nAuthentication error. Please refresh with a valid token.</span>';
+        } else {
+          out.innerHTML += '<span class="t-err">\nConnection error.</span>'; // unexpected network drop
+        }
       };
     }
 

@@ -16,6 +16,7 @@ import hmac
 import secrets
 import signal
 import atexit
+import config_builder
 
 PORT = int(os.environ.get("PORT", 8080))
 AUTH_TOKEN = os.environ.get("AUTH_TOKEN") or secrets.token_urlsafe(16)
@@ -58,7 +59,7 @@ signal.signal(signal.SIGTERM, signal_handler)
 
 # Simple rate limiting
 _request_times = {}
-_RATE_LIMIT = 10  # max requests per minute per IP
+_RATE_LIMIT = 75  # max requests per minute per IP
 
 # Paths derived from the location of this script file
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -232,6 +233,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif parsed_url.path == "/run-dcm2bids-helper":
             self._handle_dcm2bids_helper(query_params)
 
+        elif parsed_url.path == "/get-helper-summary":
+            rows = config_builder.read_helper_jsons()
+            self._send_json({"rows": rows})
+
+        elif parsed_url.path == "/get-bids-config":
+            cfg = config_builder.load_config()
+            self._send_json({"config": cfg})
+
         else:
             super().do_GET()
 
@@ -328,6 +337,43 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def do_POST(self):
+        client_ip = self.client_address[0]
+        if not _rate_limit_check(client_ip):
+            self.send_error(429, "Too many requests")
+            return
+
+        parsed_url = urlparse(self.path)
+        query_params = parse_qs(parsed_url.query)
+
+        if not _check_auth(parsed_url.path, query_params):
+            self._send_auth_error()
+            return
+
+        if parsed_url.path == "/save-bids-config":
+            self._handle_save_config()
+        else:
+            self.send_error(404, "Not found")
+
+    def _handle_save_config(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length).decode("utf-8")
+            data = json.loads(body)
+        except Exception:
+            self.send_error(400, "Invalid request body")
+            return
+
+        if not isinstance(data, dict) or "descriptions" not in data:
+            self.send_error(400, "Invalid config: missing 'descriptions'")
+            return
+
+        try:
+            config_builder.save_config(data)
+            self._send_json({"ok": True})
+        except Exception as exc:
+            self.send_error(500, f"Failed to save config: {exc}")
 
     def log_message(self, fmt, *args):
         pass  # suppress request logs

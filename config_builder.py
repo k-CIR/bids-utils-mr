@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""Helpers for reading dcm2bids helper output and managing the BIDS config file."""
+import json
+import os
+import re
+
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_HELPER_DIR = os.path.join(
+    _SCRIPT_DIR, "dcm2bids_helper", "tmp_dcm2bids", "helper"
+)
+CONFIG_FILE = os.path.join(_SCRIPT_DIR, "dcm2bids_config.json")
+
+
+def read_helper_jsons():
+    """Return filtered, deduplicated rows from helper JSON files.
+
+    Rules:
+    - Only files whose names start with '0' are included.
+    - Series whose SeriesDescription starts with 'Scout' (case-insensitive)
+      are excluded.
+    - Rows with identical (SeriesNumber, SeriesDescription) are collapsed into
+      one representative row; ``duplicate_count`` records how many extras
+      were discarded.
+
+    Returns a list of dicts::
+
+        {
+            "series_number":      int | None,
+            "series_description": str,
+            "duplicate_count":    int,   # 0 = unique, >0 = duplicates present
+        }
+    """
+    if not os.path.isdir(_HELPER_DIR):
+        return []
+
+    rows = []
+    seen = {}  # (series_number, series_description) -> index in rows
+
+    files = sorted(
+        f for f in os.listdir(_HELPER_DIR)
+        if f.endswith(".json") and f.startswith("0")
+    )
+
+    for fname in files:
+        fpath = os.path.join(_HELPER_DIR, fname)
+        try:
+            with open(fpath, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
+            continue
+
+        series_desc = data.get("SeriesDescription", "")
+        if re.match(r"^Scout", series_desc, re.IGNORECASE):
+            continue
+
+        series_num = data.get("SeriesNumber")
+        pulse_seq  = data.get("PulseSequenceName", "")
+        key = (series_num, series_desc, pulse_seq)
+        if key in seen:
+            rows[seen[key]]["duplicate_count"] += 1
+        else:
+            seen[key] = len(rows)
+            rows.append({
+                "series_number":       series_num,
+                "series_description":  series_desc,
+                "pulse_sequence_name": pulse_seq,
+                "duplicate_count":     0,
+            })
+
+    return rows
+
+
+def load_config():
+    """Load ``dcm2bids_config.json``.  Returns ``None`` if the file is absent."""
+    if not os.path.isfile(CONFIG_FILE):
+        return None
+    with open(CONFIG_FILE, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def save_config(data):
+    """Overwrite ``dcm2bids_config.json`` with *data* (pretty-printed JSON)."""
+    with open(CONFIG_FILE, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=4)

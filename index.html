@@ -146,17 +146,104 @@
       flex-shrink: 0;
       accent-color: #0e639c;
     }
+
+    /* ── Config builder table ── */
+    .config-table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.88rem;
+      white-space: nowrap;
+    }
+    .config-table th, .config-table td {
+      border: 1px solid #3c3c3c;
+      padding: 0.35rem 0.65rem;
+      text-align: left;
+    }
+    .config-table thead tr:first-child th {
+      background: #252526;
+      text-align: center;
+      color: #aaa;
+      font-size: 0.82rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .config-table thead tr:last-child th {
+      background: #2a2a2a;
+      color: #9e9e9e;
+      font-size: 0.84rem;
+    }
+    .col-output { border-left: 2px solid #555 !important; }
+    .input-cell  { cursor: pointer; user-select: none; }
+    .input-cell:hover { background: #2a3a2a; }
+    .cell-selected { background: #1a3a1a; color: #4ec9b0; }
+    .tbl-select, .tbl-input {
+      background: #1e1e1e;
+      border: 1px solid #444;
+      color: #d4d4d4;
+      font-family: monospace;
+      font-size: 0.87rem;
+      padding: 0.2rem 0.4rem;
+      border-radius: 2px;
+      width: 100%;
+      min-width: 5.5rem;
+    }
+    .tbl-select:focus, .tbl-input:focus { outline: none; border-color: #0e639c; }
+
+    /* ── Config editor ── */
+    .editor-wrap {
+      display: flex;
+      background: #0d0d0d;
+      border: 1px solid #3c3c3c;
+      border-radius: 4px;
+      overflow: hidden;
+      min-height: 45rem;
+      resize: vertical;
+    }
+    .editor-lines {
+      padding: 0.8rem 0.5rem;
+      background: #141414;
+      border-right: 1px solid #2a2a2a;
+      color: #4a4a4a;
+      font-family: monospace;
+      font-size: 0.87rem;
+      line-height: 1.55;
+      text-align: right;
+      user-select: none;
+      min-width: 2.8rem;
+      overflow: hidden;
+      flex-shrink: 0;
+      white-space: pre;
+    }
+    .config-editor-ta {
+      flex: 1;
+      min-width: 0;
+      background: transparent;
+      border: none;
+      color: #c8c8c8;
+      font-family: monospace;
+      font-size: 0.87rem;
+      padding: 0.8rem 1rem;
+      line-height: 1.55;
+      resize: none;
+      outline: none;
+      overflow-y: auto;
+    }
+    .editor-wrap:focus-within { outline: 1px solid #0e639c; }
+    .btn-secondary { background: #3c3c3c; }
+    .btn-secondary:hover { background: #4a4a4a; }
   </style>
 </head>
 <body>
 
   <div class="tabs">
-    <button class="tab-btn active" data-target="config" onclick="switchTab('config')">Config helper</button>
-    <button class="tab-btn"        data-target="bids"   onclick="switchTab('bids')">Make BIDS</button>
+    <button class="tab-btn active" data-target="config"  onclick="switchTab('config')">Config helper</button>
+    <button class="tab-btn"        data-target="editor"  onclick="switchTab('editor')">Config editor</button>
+    <button class="tab-btn"        data-target="bids"    onclick="switchTab('bids')">Make BIDS</button>
   </div>
 
   <!-- ── Config helper ── -->
   <div id="tab-config" class="tab-pane active">
+    <p style="margin:0 0 0.4rem; color:#d4d4d4; font-weight:600; font-size:2rem;">1. Analyze DICOM fields</p>
     <p class="description">
       Select one representative session from which to extract DICOM fields that can be
       used to organize your data. The first session in your data is selected by default.
@@ -179,6 +266,47 @@
     <button class="btn" id="analyze-btn" onclick="runHelper()">Analyze DICOM fields</button>
 
     <div id="helper-output">Output will appear here…</div>
+
+    <!-- ── Config builder ── -->
+    <div id="config-builder-section" style="display:none; margin-top:1.8rem;">
+      <p style="margin:0 0 0.4rem; color:#d4d4d4; font-weight:600; font-size:2rem;">2. Specify config</p>
+      <p class="description" style="margin:0 0 0.8rem;">
+        Click individual input cells to select them as criteria for the config file.
+        Fill in the output columns, then press <strong>Generate config</strong> to
+        write <code>dcm2bids_config.json</code>.
+      </p>
+      <div style="overflow-x:auto;">
+        <div id="config-table-container"></div>
+      </div>
+      <div id="config-dup-warn" class="warn" style="display:none; margin-top:0.6rem;"></div>
+      <div style="margin-top:0.9rem; display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap;">
+        <button class="btn" onclick="generateConfig()">Generate config</button>
+        <button class="btn btn-secondary" onclick="appendToConfig()">Append to config</button>
+        <button class="btn btn-secondary" onclick="loadConfigToTable()">Load config to table</button>
+        <span id="generate-status" style="font-size:0.87rem;"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Config editor ── -->
+  <div id="tab-editor" class="tab-pane">
+    <p class="description">
+      View and edit <code>dcm2bids_config.json</code> directly.
+      Changes saved here overwrite any previously generated config.
+    </p>
+    <div class="editor-wrap">
+      <div id="editor-lines" class="editor-lines">1</div>
+      <textarea id="config-editor-text" class="config-editor-ta" spellcheck="false"
+                placeholder="No config file found. Generate one from the Config helper tab."
+                oninput="validateEditorJson(); updateLineNumbers()"
+                onscroll="syncLineScroll()"></textarea>
+    </div>
+    <div id="editor-json-warn" style="display:none; margin-top:0.4rem; font-size:0.85rem; color:#f48771;"></div>
+    <div style="margin-top:0.7rem; display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap;">
+      <button class="btn" onclick="saveConfigEditor()">Save</button>
+      <button class="btn btn-secondary" onclick="loadConfigEditor()">Reload</button>
+      <span id="editor-status" style="font-size:0.87rem;"></span>
+    </div>
   </div>
 
   <!-- ── Make BIDS ── -->
@@ -216,6 +344,7 @@
         p.classList.remove('active')
       );
       document.getElementById('tab-' + name).classList.add('active');
+      if (name === 'editor') loadConfigEditor();
     }
 
     /* ── On load: get token and fetch config from server ── */
@@ -257,6 +386,7 @@
         document.getElementById('path-warn').textContent = '⚠ Failed to connect to server';
         document.getElementById('path-warn').style.display = '';
       }
+      loadHelperSummary(true);
     });
 
     /* ── Stream dcm2bids_helper output via SSE ── */
@@ -303,6 +433,7 @@
             esc(ok ? '\n\u2713 Done.' : '\n\u2717 Exited with code ' + msg.returncode + '.') +
             '</span>';
           out.scrollTop = out.scrollHeight;
+          if (ok) loadHelperSummary(false);
         } else {
           out.innerHTML += esc(msg.line) + '\n';
           out.scrollTop = out.scrollHeight;
@@ -325,6 +456,362 @@
 
     function esc(s) {
       return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function escAttr(s) {
+      return esc(String(s == null ? '' : s)).replace(/"/g, '&quot;');
+    }
+
+    /* ── Config builder state ── */
+    let tableRows  = [];
+    let tableState = [];
+    const stateMap = new Map(); // stateKey -> frozen copy of state
+
+    function stateKey(row) {
+      return String(row.series_number) + '|' + row.series_description + '|' + (row.pulse_sequence_name || '');
+    }
+
+    async function loadHelperSummary(prePopulate) {
+      // Snapshot current state so it survives a table refresh.
+      tableRows.forEach((row, i) =>
+        stateMap.set(stateKey(row), JSON.parse(JSON.stringify(tableState[i])))
+      );
+      try {
+        const resp = await fetch(addTokenToUrl('/get-helper-summary'));
+        if (resp.status === 401) { handleAuthError(); return; }
+        const data = await resp.json();
+        tableRows  = data.rows || [];
+        tableState = tableRows.map(row => {
+          const saved = stateMap.get(stateKey(row));
+          return saved || {
+            selected: { series_number: false, series_description: false, pulse_sequence_name: false },
+            datatype: '', task_name: '', acq: '', run: '', suffix: '', intended_for: ''
+          };
+        });
+        if (prePopulate) {
+          const cfgResp = await fetch(addTokenToUrl('/get-bids-config'));
+          if (cfgResp.ok) {
+            const cfgData = await cfgResp.json();
+            if (cfgData.config) prePopulateFromConfig(cfgData.config);
+          }
+        }
+        renderTable();
+      } catch (e) {
+        console.error('Failed to load helper summary:', e);
+      }
+    }
+
+    function prePopulateFromConfig(configData) {
+      if (!configData || !Array.isArray(configData.descriptions)) return;
+      for (const desc of configData.descriptions) {
+        const criteria = desc.criteria || {};
+        if (!Object.keys(criteria).length) continue;
+        const idx = tableRows.findIndex(row => {
+          if ('SeriesDescription' in criteria &&
+              criteria.SeriesDescription !== row.series_description)   return false;
+          if ('SeriesNumber'      in criteria &&
+              Number(criteria.SeriesNumber) !== row.series_number)     return false;
+          if ('PulseSequenceName' in criteria &&
+              criteria.PulseSequenceName !== row.pulse_sequence_name)  return false;
+          return true;
+        });
+        if (idx < 0) continue;
+        const s  = tableState[idx];
+        const ce = Array.isArray(desc.custom_entities) ? desc.custom_entities : [];
+        const sc = desc.sidecar_changes || {};
+        if ('SeriesDescription' in criteria) s.selected.series_description  = true;
+        if ('SeriesNumber'      in criteria) s.selected.series_number       = true;
+        if ('PulseSequenceName' in criteria) s.selected.pulse_sequence_name = true;
+        s.datatype     = desc.datatype || '';
+        s.suffix       = desc.suffix   || '';
+        s.task_name    = sc.TaskName    || '';
+        s.intended_for = sc.IntendedFor || '';
+        const acqEnt = ce.find(e => e.startsWith('acq-'));
+        const runEnt = ce.find(e => e.startsWith('run-'));
+        s.acq = acqEnt ? acqEnt.slice(4) : '';
+        s.run = runEnt ? runEnt.slice(4) : '';
+      }
+    }
+
+    function renderTable() {
+      const section   = document.getElementById('config-builder-section');
+      const container = document.getElementById('config-table-container');
+      const warnEl    = document.getElementById('config-dup-warn');
+      if (!tableRows.length) { section.style.display = 'none'; return; }
+      section.style.display = '';
+
+      const hasDups = tableRows.some(r => r.duplicate_count > 0);
+      if (hasDups) {
+        warnEl.textContent = '\u26a0\ufe0f Some series appear multiple times '
+          + '(e.g. echo variants or magnitude/phase image pairs). '
+          + 'One representative row is shown per unique combination of input fields.';
+        warnEl.style.display = '';
+      } else {
+        warnEl.style.display = 'none';
+      }
+
+      const dtypes = ['anat', 'func', 'dwi', 'perf', 'fmap'];
+      let html = '<table class="config-table"><thead><tr>'
+        + '<th colspan="3">Input</th>'
+        + '<th colspan="6" class="col-output">Output</th>'
+        + '</tr><tr>'
+        + '<th>Series number</th>'
+        + '<th>Series description</th>'
+        + '<th>Pulse sequence name</th>'
+        + '<th class="col-output">Data type</th>'
+        + '<th>Task name</th>'
+        + '<th>Acquisition</th>'
+        + '<th>Run</th>'
+        + '<th>Suffix (mandatory)</th>'
+        + '<th>Intended for</th>'
+        + '</tr></thead><tbody>';
+
+      tableRows.forEach((row, i) => {
+        const s       = tableState[i];
+        const dupMark = row.duplicate_count > 0 ? ' \u26a0\ufe0f' : '';
+        const opts = dtypes.map(v =>
+          '<option value="' + v + '"' + (s.datatype === v ? ' selected' : '') + '>' + v + '</option>'
+        ).join('');
+        html += '<tr>'
+          + '<td class="input-cell' + (s.selected.series_number        ? ' cell-selected' : '')
+            + '" onclick="toggleCell(' + i + ',\'series_number\')">'
+            + esc(String(row.series_number ?? '')) + '</td>'
+          + '<td class="input-cell' + (s.selected.series_description   ? ' cell-selected' : '')
+            + '" onclick="toggleCell(' + i + ',\'series_description\')">'
+            + esc(row.series_description) + dupMark + '</td>'
+          + '<td class="input-cell' + (s.selected.pulse_sequence_name  ? ' cell-selected' : '')
+            + '" onclick="toggleCell(' + i + ',\'pulse_sequence_name\')">'
+            + esc(row.pulse_sequence_name || '') + '</td>'
+          + '<td class="col-output"><select class="tbl-select" onchange="updateTableState(' + i + ',\'datatype\',this.value)">'
+            + '<option value="">--</option>' + opts + '</select></td>'
+          + '<td><input class="tbl-input" type="text" value="' + escAttr(s.task_name) + '" placeholder="(optional)" '
+            + 'oninput="updateTableState(' + i + ',\'task_name\',this.value)"></td>'
+          + '<td><input class="tbl-input" type="text" value="' + escAttr(s.acq) + '" placeholder="(optional)" '
+            + 'oninput="updateTableState(' + i + ',\'acq\',this.value)"></td>'
+          + '<td><input class="tbl-input" type="text" value="' + escAttr(s.run) + '" placeholder="(optional)" '
+            + 'oninput="updateTableState(' + i + ',\'run\',this.value)"></td>'
+          + '<td><input class="tbl-input" type="text" value="' + escAttr(s.suffix) + '" placeholder="e.g.\u00a0T1w, FLAIR, bold, dwi" '
+            + 'oninput="updateTableState(' + i + ',\'suffix\',this.value)"></td>'
+          + '<td><input class="tbl-input" type="text" value="' + escAttr(s.intended_for) + '" placeholder="(optional)" '
+            + 'oninput="updateTableState(' + i + ',\'intended_for\',this.value)"></td>'
+          + '</tr>';
+      });
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+
+    function toggleCell(rowIdx, field) {
+      tableState[rowIdx].selected[field] = !tableState[rowIdx].selected[field];
+      const tbody = document.querySelector('.config-table tbody');
+      if (!tbody) return;
+      const colIdx = { series_number: 0, series_description: 1, pulse_sequence_name: 2 }[field] ?? 0;
+      const cell = tbody.rows[rowIdx].cells[colIdx];
+      cell.classList.toggle('cell-selected', tableState[rowIdx].selected[field]);
+    }
+
+    function updateTableState(rowIdx, field, value) {
+      tableState[rowIdx][field] = value;
+    }
+
+    /* ── Config builder helpers ── */
+    function buildDescriptions() {
+      const descriptions = [];
+      tableRows.forEach((row, i) => {
+        const s = tableState[i];
+        if (!(s.selected.series_number || s.selected.series_description || s.selected.pulse_sequence_name)) return;
+        if (!s.datatype || !s.suffix.trim()) return;
+
+        const desc = { datatype: s.datatype, suffix: s.suffix.trim() };
+
+        // custom_entities
+        const ce = [];
+        if (s.task_name.trim()) ce.push('task-' + s.task_name.trim());
+        if (s.acq.trim())       ce.push('acq-'  + s.acq.trim());
+        if (s.run.trim())       ce.push('run-'  + s.run.trim());
+        if (ce.length)          desc.custom_entities = ce;
+
+        // criteria
+        desc.criteria = {};
+        if (s.selected.series_description)  desc.criteria.SeriesDescription  = row.series_description;
+        if (s.selected.series_number)       desc.criteria.SeriesNumber        = row.series_number;
+        if (s.selected.pulse_sequence_name) desc.criteria.PulseSequenceName   = row.pulse_sequence_name;
+
+        // sidecar_changes
+        const sc = {};
+        if (s.task_name.trim())    sc.TaskName    = s.task_name.trim();
+        if (s.intended_for.trim()) sc.IntendedFor = s.intended_for.trim();
+        if (Object.keys(sc).length) desc.sidecar_changes = sc;
+
+        descriptions.push(desc);
+      });
+      return descriptions;
+    }
+
+    async function _doSaveConfig(payload) {
+      const resp = await fetch(addTokenToUrl('/save-bids-config'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      return !!data.ok;
+    }
+
+    async function generateConfig() {
+      const statusEl = document.getElementById('generate-status');
+      const descriptions = buildDescriptions();
+      if (!descriptions.length) {
+        statusEl.innerHTML = '<span class="t-err">No rows ready: each needs at least one '
+          + 'selected input cell, a data type, and a suffix.</span>';
+        return;
+      }
+
+      // Warn before overwriting an existing file
+      try {
+        const check = await fetch(addTokenToUrl('/get-bids-config'));
+        if (check.ok) {
+          const checkData = await check.json();
+          if (checkData.config !== null) {
+            const confirmed = confirm(
+              'dcm2bids_config.json already exists.\n\n'
+              + 'Overwrite it with '
+              + descriptions.length + ' description'
+              + (descriptions.length !== 1 ? 's' : '') + '?'
+            );
+            if (!confirmed) { statusEl.textContent = ''; return; }
+          }
+        }
+      } catch { /* network error – fall through to save */ }
+
+      try {
+        const ok = await _doSaveConfig({ descriptions });
+        statusEl.innerHTML = ok
+          ? '<span class="t-ok">\u2713 Saved dcm2bids_config.json ('
+              + descriptions.length + ' description' + (descriptions.length !== 1 ? 's' : '') + ')</span>'
+          : '<span class="t-err">\u2717 Server error saving config.</span>';
+      } catch {
+        statusEl.innerHTML = '<span class="t-err">\u2717 Failed to reach server.</span>';
+      }
+    }
+
+    async function appendToConfig() {
+      const statusEl = document.getElementById('generate-status');
+      const newDescs = buildDescriptions();
+      if (!newDescs.length) {
+        statusEl.innerHTML = '<span class="t-err">No rows ready: each needs at least one '
+          + 'selected input cell, a data type, and a suffix.</span>';
+        return;
+      }
+
+      let existing = [];
+      try {
+        const resp = await fetch(addTokenToUrl('/get-bids-config'));
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.config && Array.isArray(data.config.descriptions)) {
+            existing = data.config.descriptions;
+          }
+        }
+      } catch { /* no existing config – start fresh */ }
+
+      const merged = existing.concat(newDescs);
+      try {
+        const ok = await _doSaveConfig({ descriptions: merged });
+        statusEl.innerHTML = ok
+          ? '<span class="t-ok">\u2713 Appended ' + newDescs.length + ' description'
+              + (newDescs.length !== 1 ? 's' : '') + ' (total: ' + merged.length + ')</span>'
+          : '<span class="t-err">\u2717 Server error saving config.</span>';
+      } catch {
+        statusEl.innerHTML = '<span class="t-err">\u2717 Failed to reach server.</span>';
+      }
+    }
+
+    async function loadConfigToTable() {
+      const statusEl = document.getElementById('generate-status');
+      try {
+        const resp = await fetch(addTokenToUrl('/get-bids-config'));
+        if (resp.status === 401) { handleAuthError(); return; }
+        const data = await resp.json();
+        if (!data.config) {
+          statusEl.innerHTML = '<span class="t-err">No config file found.</span>';
+          return;
+        }
+        // Reset all output fields, then fill from config
+        tableState = tableRows.map(() => ({
+          selected: { series_number: false, series_description: false, pulse_sequence_name: false },
+          datatype: '', task_name: '', acq: '', run: '', suffix: '', intended_for: ''
+        }));
+        prePopulateFromConfig(data.config);
+        renderTable();
+        statusEl.innerHTML = '<span class="t-ok">\u2713 Config loaded into table</span>';
+      } catch {
+        statusEl.innerHTML = '<span class="t-err">\u2717 Failed to load config.</span>';
+      }
+    }
+
+    /* ── Config editor ── */
+    function validateEditorJson() {
+      const ta   = document.getElementById('config-editor-text');
+      const warn = document.getElementById('editor-json-warn');
+      if (!ta.value.trim()) { warn.style.display = 'none'; return; }
+      try {
+        JSON.parse(ta.value);
+        warn.style.display = 'none';
+      } catch (e) {
+        warn.textContent = '\u26a0 Invalid JSON: ' + e.message;
+        warn.style.display = '';
+      }
+    }
+
+    function updateLineNumbers() {
+      const ta     = document.getElementById('config-editor-text');
+      const gutter = document.getElementById('editor-lines');
+      const count  = ta.value.split('\n').length;
+      gutter.textContent = Array.from({length: count}, (_, i) => i + 1).join('\n');
+    }
+
+    function syncLineScroll() {
+      const ta     = document.getElementById('config-editor-text');
+      const gutter = document.getElementById('editor-lines');
+      gutter.scrollTop = ta.scrollTop;
+    }
+
+    async function loadConfigEditor() {
+      const ta     = document.getElementById('config-editor-text');
+      const status = document.getElementById('editor-status');
+      try {
+        const resp = await fetch(addTokenToUrl('/get-bids-config'));
+        if (resp.status === 401) { handleAuthError(); return; }
+        const data = await resp.json();
+        ta.value       = data.config ? JSON.stringify(data.config, null, 4) : '';
+        status.textContent = '';
+        updateLineNumbers();
+      } catch {
+        status.innerHTML = '<span class="t-err">Failed to load config.</span>';
+      }
+    }
+
+    async function saveConfigEditor() {
+      const ta     = document.getElementById('config-editor-text');
+      const status = document.getElementById('editor-status');
+      let parsed;
+      try { parsed = JSON.parse(ta.value); }
+      catch (e) {
+        status.innerHTML = '<span class="t-err">\u2717 Invalid JSON: ' + esc(e.message) + '</span>';
+        return;
+      }
+      try {
+        const resp = await fetch(addTokenToUrl('/save-bids-config'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(parsed),
+        });
+        const data = await resp.json();
+        status.innerHTML = data.ok
+          ? '<span class="t-ok">\u2713 Saved</span>'
+          : '<span class="t-err">\u2717 Server error.</span>';
+      } catch {
+        status.innerHTML = '<span class="t-err">\u2717 Failed to reach server.</span>';
+      }
     }
   </script>
 </body>

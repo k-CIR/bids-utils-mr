@@ -17,6 +17,7 @@ import secrets
 import signal
 import atexit
 import config_builder
+import bids_runner
 
 PORT = int(os.environ.get("PORT", 8080))
 AUTH_TOKEN = os.environ.get("AUTH_TOKEN") or secrets.token_urlsafe(16)
@@ -241,6 +242,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             cfg = config_builder.load_config()
             self._send_json({"config": cfg})
 
+        elif parsed_url.path == "/discover-sessions":
+            dicom_root = query_params.get("dicom_root", [None])[0]
+            if not dicom_root:
+                self.send_error(400, "Missing dicom_root parameter")
+                return
+            dicom_root = dicom_root.lstrip("/")
+            full_root = os.path.realpath(os.path.join(PROJECT_ROOT, dicom_root))
+            allowed = os.path.realpath(PROJECT_ROOT)
+            if not (full_root == allowed or full_root.startswith(allowed + os.sep)):
+                self.send_error(403, "Path outside project root")
+                return
+            sessions = bids_runner.discover_sessions(full_root)
+            self._send_json({"sessions": sessions})
+
+        elif parsed_url.path == "/stream-dcm2bids-job":
+            self._handle_stream_dcm2bids_job(query_params)
+
         else:
             super().do_GET()
 
@@ -330,6 +348,94 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         emit({"done": True, "returncode": rc})
 
+    def _handle_run_dcm2bids(self, params):
+        """Start a dcm2bids batch job; return the job_id immediately.
+        params is a plain dict parsed from the POST JSON body.
+        """
+        try:
+            dicom_root_rel = params.get("dicom_root")
+            output_rel     = params.get("output_dir")
+            config_rel     = params.get("config_file")
+            selected       = params.get("sessions")   # list of label strings or None
+            max_workers    = int(params.get("max_workers", 8))
+            clobber        = bool(params.get("clobber", False))
+        except (TypeError, ValueError):
+            self.send_error(400, "Invalid parameters")
+            return
+
+        if not all([dicom_root_rel, output_rel, config_rel]):
+            self.send_error(400, "Missing required parameters")
+            return
+
+        # Clamp workers
+        max_workers = max(1, min(max_workers, 24))
+
+        # Resolve and validate all paths stay within PROJECT_ROOT
+        allowed = os.path.realpath(PROJECT_ROOT)
+
+        def _resolve(rel):
+            p = os.path.realpath(os.path.join(PROJECT_ROOT, str(rel).lstrip("/")))
+            if not (p == allowed or p.startswith(allowed + os.sep)):
+                raise ValueError(f"Path outside project root: {rel}")
+            return p
+
+        try:
+            dicom_root  = _resolve(dicom_root_rel)
+            output_dir  = _resolve(output_rel)
+            config_file = _resolve(config_rel)
+        except ValueError as exc:
+            self.send_error(403, str(exc))
+            return
+
+        if not os.path.isfile(config_file):
+            self._send_json({"error": "config_not_found"})
+            return
+
+        # Filter to requested labels (run all if none specified)
+        all_sessions = bids_runner.discover_sessions(dicom_root)
+        if selected:
+            sel_set  = set(selected)
+            sessions = [s for s in all_sessions if s["label"] in sel_set]
+        else:
+            sessions = all_sessions
+
+        if not sessions:
+            self._send_json({"error": "no_sessions"})
+            return
+
+        try:
+            job_id = bids_runner.start_conversion(
+                sessions, dicom_root, output_dir, config_file, max_workers, clobber
+            )
+            self._send_json({"job_id": job_id})
+        except RuntimeError as exc:
+            self._send_json({"error": str(exc)})
+
+    def _handle_stream_dcm2bids_job(self, params):
+        """SSE stream for a running dcm2bids job."""
+        job_id = params.get("job_id", [None])[0]
+        if not job_id:
+            self.send_error(400, "Missing job_id")
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+
+        def emit(obj):
+            self.wfile.write(("data: " + json.dumps(obj) + "\n\n").encode())
+            self.wfile.flush()
+
+        try:
+            for entry in bids_runner.stream_job(job_id):
+                emit(entry)
+                if entry.get("type") == "done":
+                    break
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def _send_json(self, obj):
         body = json.dumps(obj).encode()
         self.send_response(200)
@@ -353,6 +459,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         if parsed_url.path == "/save-bids-config":
             self._handle_save_config()
+        elif parsed_url.path == "/run-dcm2bids":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                body = self.rfile.read(length).decode("utf-8")
+                params = json.loads(body)
+            except Exception:
+                self.send_error(400, "Invalid JSON body")
+                return
+            self._handle_run_dcm2bids(params)
         else:
             self.send_error(404, "Not found")
 

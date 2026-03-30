@@ -311,7 +311,75 @@
 
   <!-- ── Make BIDS ── -->
   <div id="tab-bids" class="tab-pane">
-    <p class="description">Make BIDS functionality coming soon.</p>
+    <p style="margin:0 0 0.4rem; color:#d4d4d4; font-weight:600; font-size:2rem;">3. Run dcm2bids</p>
+    <p class="description">Convert DICOM sessions to BIDS format using dcm2bids.</p>
+
+    <!-- DICOM input path -->
+    <label style="font-size:0.85rem; color:#9e9e9e; margin-bottom:0.3rem; display:block;">DICOM input directory</label>
+    <div class="path-row">
+      <span class="path-static" id="bids-root-static">/data/projects/…</span>
+      <span class="path-static">/</span>
+      <input id="bids-dicom-path" class="path-input" type="text" spellcheck="false" value="raw/mri" />
+    </div>
+
+    <!-- BIDS output path -->
+    <label style="font-size:0.85rem; color:#9e9e9e; margin-bottom:0.3rem; display:block;">BIDS output directory</label>
+    <div class="path-row">
+      <span class="path-static" id="bids-out-static">/data/projects/…</span>
+      <span class="path-static">/</span>
+      <input id="bids-output-path" class="path-input" type="text" spellcheck="false" value="BIDS" />
+    </div>
+
+    <!-- Config file (read-only display) -->
+    <label style="font-size:0.85rem; color:#9e9e9e; margin-bottom:0.3rem; display:block;">Config file</label>
+    <div class="path-row" style="opacity:0.65; cursor:default;">
+      <span class="path-static" id="bids-cfg-root-static">/data/projects/…</span>
+      <span class="path-static">/bids-utils-mr/dcm2bids_config.json</span>
+    </div>
+
+    <!-- Options -->
+    <div style="display:flex; align-items:center; gap:1.5rem; margin-bottom:1rem; flex-wrap:wrap;">
+      <label style="font-size:0.87rem; color:#9e9e9e; display:flex; align-items:center; gap:0.5rem;">
+        Max parallel workers:
+        <input id="bids-workers" type="number" min="1" max="24" value="8"
+          style="width:4rem; background:#1e1e1e; border:1px solid #444; color:#d4d4d4;
+                 font-family:monospace; font-size:0.87rem; padding:0.2rem 0.4rem;
+                 border-radius:2px; outline:none;" />
+      </label>
+      <label class="force-label" style="margin:0;">
+        <input type="checkbox" id="bids-clobber" />
+        --clobber &nbsp;(overwrite existing BIDS output)
+      </label>
+    </div>
+
+    <button class="btn" id="discover-btn" onclick="discoverSessions()">Discover sessions</button>
+
+    <!-- Session list (shown after discovery) -->
+    <div id="bids-sessions-section" style="display:none; margin-top:1.4rem;">
+      <div style="display:flex; align-items:center; gap:0.8rem; margin-bottom:0.5rem; flex-wrap:wrap;">
+        <span style="font-size:0.88rem; color:#9e9e9e;" id="bids-session-count"></span>
+        <button class="btn btn-secondary"
+          style="padding:0.3rem 0.8rem; font-size:0.82rem;"
+          onclick="bidsSelectAll(true)">Select all</button>
+        <button class="btn btn-secondary"
+          style="padding:0.3rem 0.8rem; font-size:0.82rem;"
+          onclick="bidsSelectAll(false)">Deselect all</button>
+      </div>
+      <div id="bids-session-table-wrap"
+        style="overflow-x:auto; max-height:280px; overflow-y:auto;
+               border:1px solid #3c3c3c; border-radius:3px;"></div>
+      <div style="margin-top:0.9rem; display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap;">
+        <button class="btn" id="run-bids-btn" onclick="runDcm2bids()">Run dcm2bids</button>
+        <span id="bids-run-status" style="font-size:0.87rem;"></span>
+      </div>
+    </div>
+
+    <!-- Log output -->
+    <div id="bids-log"
+      style="display:none; margin-top:1.2rem; background:#0d0d0d; border:1px solid #3c3c3c;
+             border-radius:4px; padding:0.8rem 1rem; white-space:pre-wrap;
+             min-height:10rem; max-height:600px; overflow-y:auto;
+             line-height:1.55; font-size:0.85rem; color:#c8c8c8;"></div>
   </div>
 
   <script>
@@ -373,6 +441,9 @@
         }
         
         document.getElementById('path-static').textContent = cfg.project_root;
+        document.getElementById('bids-root-static').textContent = cfg.project_root;
+        document.getElementById('bids-out-static').textContent  = cfg.project_root;
+        document.getElementById('bids-cfg-root-static').textContent = cfg.project_root;
         if (cfg.warning) {
           const w = document.getElementById('path-warn');
           w.textContent = '⚠ ' + cfg.warning;
@@ -788,6 +859,157 @@
       } catch {
         status.innerHTML = '<span class="t-err">Failed to load config.</span>';
       }
+    }
+
+    /* ── Make BIDS ── */
+    let _bidsDiscoveredSessions = [];
+    const _SESSION_COLORS = ['#9cdcfe','#4ec9b0','#dcdcaa','#ce9178','#c586c0','#569cd6','#4fc1ff','#b5cea8'];
+    function _sessionColor(idx) { return _SESSION_COLORS[idx % _SESSION_COLORS.length]; }
+
+    async function discoverSessions() {
+      const dicomRel = document.getElementById('bids-dicom-path').value.trim();
+      if (!dicomRel) { alert('Enter a DICOM input path first.'); return; }
+      const btn = document.getElementById('discover-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Discovering…';
+      document.getElementById('bids-run-status').textContent = '';
+      document.getElementById('bids-sessions-section').style.display = 'none';
+      try {
+        const res = await fetch(addTokenToUrl('/discover-sessions?dicom_root=' + encodeURIComponent(dicomRel)));
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        _bidsDiscoveredSessions = data.sessions || [];
+        renderSessionList(_bidsDiscoveredSessions);
+      } catch (e) {
+        document.getElementById('bids-session-count').textContent = 'Error: ' + e.message;
+        document.getElementById('bids-session-table-wrap').innerHTML = '';
+        document.getElementById('bids-sessions-section').style.display = '';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Discover sessions';
+      }
+    }
+
+    function renderSessionList(sessions) {
+      const countEl   = document.getElementById('bids-session-count');
+      const tableWrap = document.getElementById('bids-session-table-wrap');
+      const section   = document.getElementById('bids-sessions-section');
+      countEl.textContent = sessions.length + ' session' + (sessions.length !== 1 ? 's' : '') + ' found';
+      if (sessions.length === 0) {
+        tableWrap.innerHTML = '<p style="padding:0.6rem 1rem; color:#9e9e9e; font-size:0.87rem;">No sessions found in that directory.</p>';
+        section.style.display = '';
+        return;
+      }
+      let html = '<table class="config-table" style="font-size:0.85rem;">';
+      html += '<thead><tr><th>Label</th><th>Participant</th><th>Session</th><th style="text-align:center;">Include</th></tr></thead><tbody>';
+      sessions.forEach((s, i) => {
+        const color = _sessionColor(i);
+        html += '<tr>';
+        html += '<td style="color:' + color + ';">' + esc(s.label) + '</td>';
+        html += '<td>' + esc(s.participant || '') + '</td>';
+        html += '<td>' + esc(s.session || '\u2014') + '</td>';
+        html += '<td style="text-align:center;"><input type="checkbox" class="bids-ses-check" data-label="' + escAttr(s.label) + '" checked style="accent-color:#0e639c;"></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      tableWrap.innerHTML = html;
+      section.style.display = '';
+    }
+
+    function bidsSelectAll(checked) {
+      document.querySelectorAll('.bids-ses-check').forEach(cb => { cb.checked = checked; });
+    }
+
+    async function runDcm2bids() {
+      const dicomRel  = document.getElementById('bids-dicom-path').value.trim();
+      const outputRel = document.getElementById('bids-output-path').value.trim();
+      const configRel = 'bids-utils-mr/dcm2bids_config.json';
+      const workers   = parseInt(document.getElementById('bids-workers').value, 10) || 8;
+      const clobber   = document.getElementById('bids-clobber').checked;
+      const btn       = document.getElementById('run-bids-btn');
+      const statusEl  = document.getElementById('bids-run-status');
+      const selectedLabels = Array.from(
+        document.querySelectorAll('.bids-ses-check:checked')
+      ).map(cb => cb.dataset.label);
+      if (selectedLabels.length === 0) {
+        statusEl.innerHTML = '<span class="t-err">No sessions selected.</span>';
+        return;
+      }
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Starting…';
+      statusEl.textContent = '';
+      const logEl = document.getElementById('bids-log');
+      logEl.style.display = '';
+      logEl.innerHTML = '';
+      try {
+        const resp = await fetch(addTokenToUrl('/run-dcm2bids'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dicom_root:  dicomRel,
+            output_dir:  outputRel,
+            config_file: configRel,
+            sessions:    selectedLabels,
+            max_workers: workers,
+            clobber:     clobber,
+          }),
+        });
+        const data = await resp.json();
+        if (data.error) {
+          statusEl.innerHTML = '<span class="t-err">✗ ' + esc(data.error) + '</span>';
+          btn.disabled = false;
+          btn.textContent = 'Run dcm2bids';
+          return;
+        }
+        _streamBidsJob(data.job_id, btn, statusEl);
+      } catch (e) {
+        statusEl.innerHTML = '<span class="t-err">✗ ' + esc(e.message) + '</span>';
+        btn.disabled = false;
+        btn.textContent = 'Run dcm2bids';
+      }
+    }
+
+    function _streamBidsJob(jobId, btn, statusEl) {
+      btn.innerHTML = '<span class="spinner"></span> Running…';
+      const logEl   = document.getElementById('bids-log');
+      const colorMap = {};
+      _bidsDiscoveredSessions.forEach((s, i) => { colorMap[s.label] = _sessionColor(i); });
+      const src = new EventSource(addTokenToUrl('/stream-dcm2bids-job?job_id=' + encodeURIComponent(jobId)));
+      src.onmessage = (ev) => {
+        const msg   = JSON.parse(ev.data);
+        const label = msg.label || '';
+        const color = colorMap[label] || '#c8c8c8';
+        const lbl   = label ? '<span style="color:' + color + ';">[' + esc(label) + ']</span> ' : '';
+        if (msg.type === 'start') {
+          logEl.innerHTML += '<span style="color:' + color + ';">[' + esc(label) + '] Starting…</span>\n';
+        } else if (msg.type === 'line') {
+          logEl.innerHTML += lbl + esc(msg.text) + '\n';
+        } else if (msg.type === 'exit') {
+          const ok = msg.returncode === 0;
+          logEl.innerHTML += lbl + '<span class="' + (ok ? 't-ok' : 't-err') + '">' +
+            (ok ? '\u2713 Done (exit 0)' : '\u2717 Exited with code ' + msg.returncode) + '</span>\n';
+        } else if (msg.type === 'error') {
+          logEl.innerHTML += '<span class="t-err">' + lbl + esc(msg.text || 'Unknown error') + '</span>\n';
+        } else if (msg.type === 'done') {
+          logEl.innerHTML += '<span class="t-ok">\n\u2713 All sessions complete.</span>\n';
+          src.close();
+          btn.disabled = false;
+          btn.textContent = 'Run dcm2bids';
+          statusEl.innerHTML = '<span class="t-ok">\u2713 Batch complete</span>';
+        }
+        logEl.scrollTop = logEl.scrollHeight;
+      };
+      src.onerror = () => {
+        src.close();
+        btn.disabled = false;
+        btn.textContent = 'Run dcm2bids';
+        if (!logEl.textContent.includes('All sessions complete')) {
+          logEl.innerHTML += '<span class="t-err">Connection lost.</span>\n';
+          statusEl.innerHTML = '<span class="t-err">\u2717 Stream disconnected</span>';
+        }
+        logEl.scrollTop = logEl.scrollHeight;
+      };
     }
 
     async function saveConfigEditor() {

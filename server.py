@@ -256,6 +256,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             sessions = bids_runner.discover_sessions(full_root)
             self._send_json({"sessions": sessions})
 
+        elif parsed_url.path == "/get-recode-table":
+            self._send_json({"recode": config_builder.load_recode_table()})
+
         elif parsed_url.path == "/stream-dcm2bids-job":
             self._handle_stream_dcm2bids_job(query_params)
 
@@ -399,6 +402,25 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         else:
             sessions = all_sessions
 
+        # Apply participant/session recodes (digits-only; empty = use original)
+        recode = params.get("recode") or {}
+        if isinstance(recode, dict) and recode:
+            recoded = []
+            for s in sessions:
+                rec = recode.get(s["label"], {})
+                rp  = str(rec.get("recoded_participant") or "").strip()
+                rs  = str(rec.get("recoded_session")     or "").strip()
+                if (rp and not re.match(r"^\d+$", rp)) or (rs and not re.match(r"^\d+$", rs)):
+                    self._send_json({"error": f"Invalid recode values for {s['label']}"})
+                    return
+                ns = dict(s)
+                if rp:
+                    ns["participant"] = rp
+                if rs:
+                    ns["session"] = rs
+                recoded.append(ns)
+            sessions = recoded
+
         if not sessions:
             self._send_json({"error": "no_sessions"})
             return
@@ -459,6 +481,33 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         if parsed_url.path == "/save-bids-config":
             self._handle_save_config()
+        elif parsed_url.path == "/save-recode-table":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                body   = self.rfile.read(length).decode("utf-8")
+                data   = json.loads(body)
+            except Exception:
+                self.send_error(400, "Invalid JSON body")
+                return
+            recode = data.get("recode") if isinstance(data, dict) else None
+            if not isinstance(recode, dict):
+                self.send_error(400, "Missing recode dict")
+                return
+            cleaned = {}
+            for label, rec in recode.items():
+                if not isinstance(rec, dict):
+                    continue
+                rp = str(rec.get("recoded_participant") or "").strip()
+                rs = str(rec.get("recoded_session")     or "").strip()
+                if rp and not re.match(r"^\d+$", rp):
+                    self.send_error(400, f"Invalid recoded_participant: {rp}")
+                    return
+                if rs and not re.match(r"^\d+$", rs):
+                    self.send_error(400, f"Invalid recoded_session: {rs}")
+                    return
+                cleaned[label] = {"recoded_participant": rp, "recoded_session": rs}
+            config_builder.save_recode_table(cleaned)
+            self._send_json({"ok": True})
         elif parsed_url.path == "/run-dcm2bids":
             try:
                 length = int(self.headers.get("Content-Length", 0))

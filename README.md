@@ -7,3 +7,5 @@ Providing an easy to use interface for creating a config file and running [dcm2b
 All processing is done by dcm2bids on SPICE. This repository provide an interface by serving a html-file (over ssh) to your local machine that makes it easy to construct a config-file for dcm2bids.
 
 See the cir-wiki pages: https://k-cir.github.io/cir-wiki/mrc/mrc-bids/ for a detailed description on how to use the interface.
+
+Image here.

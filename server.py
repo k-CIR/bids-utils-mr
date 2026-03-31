@@ -23,6 +23,99 @@ _DERIVATIVES_DIR_CANDIDATES = [
 ]
 
 
+def _normalize_subject(value):
+    s = str(value or "").strip()
+    if not s:
+        return ""
+    if s.lower().startswith("sub-"):
+        return s
+    return f"sub-{s}"
+
+
+def _normalize_session(value):
+    s = str(value or "").strip()
+    if not s:
+        return ""
+    if s.lower().startswith("ses-"):
+        return s
+    return f"ses-{s}"
+
+
+def _detect_petprep_done(subject, session):
+    """Detect whether PETPrep outputs exist for subject/session."""
+    candidate_dirs = [
+        os.path.join(_RAW_PET_DIR, "derivatives", "petprep", subject, session),
+        os.path.join(PROJECT_ROOT, "derivatives", "petprep", subject, session),
+        os.path.join(_RAW_PET_DIR, "derivatives", "petprep", subject, session, "pet"),
+        os.path.join(PROJECT_ROOT, "derivatives", "petprep", subject, session, "pet"),
+        os.path.join(_RAW_PET_DIR, "derivatives", subject, session, "pet"),
+        os.path.join(PROJECT_ROOT, "derivatives", subject, session, "pet"),
+    ]
+
+    candidate_files = [
+        f"{subject}_{session}_pet.nii.gz",
+        f"{subject}_{session}_desc-preproc_pet.nii.gz",
+        f"{subject}_{session}_space-T1w_desc-preproc_pet.nii.gz",
+    ]
+
+    for base_dir in candidate_dirs:
+        for filename in candidate_files:
+            if os.path.isfile(os.path.join(base_dir, filename)):
+                return True
+
+        if os.path.isdir(base_dir):
+            try:
+                for entry in os.listdir(base_dir):
+                    if entry.lower().endswith(".nii.gz"):
+                        return True
+            except OSError:
+                pass
+
+    return False
+
+
+def _auto_detect_statuses(headers, rows):
+    """Return per-row status detection from filesystem for BIDS and PETPrep."""
+    if not headers or not rows:
+        return []
+
+    header_idx = {str(h).strip().lower(): i for i, h in enumerate(headers)}
+    subject_i = next((header_idx[k] for k in ("subject", "sub", "participant_id") if k in header_idx), None)
+    session_i = next((header_idx[k] for k in ("session", "ses", "visit") if k in header_idx), None)
+
+    if subject_i is None or session_i is None:
+        return []
+
+    out = []
+    for row_index, row in enumerate(rows):
+        subject_raw = row[subject_i] if subject_i < len(row) else ""
+        session_raw = row[session_i] if session_i < len(row) else ""
+        subject = _normalize_subject(subject_raw)
+        session = _normalize_session(session_raw)
+
+        if not subject or not session:
+            out.append({"row_index": row_index, "bids_done": False, "petprep_done": False})
+            continue
+
+        bids_pet_path = os.path.join(
+            _RAW_PET_DIR,
+            subject,
+            session,
+            "pet",
+            f"{subject}_{session}_pet.nii.gz",
+        )
+        bids_done = os.path.isfile(bids_pet_path)
+        petprep_done = _detect_petprep_done(subject, session)
+
+        out.append({
+            "row_index": row_index,
+            "bids_done": bids_done,
+            "petprep_done": petprep_done,
+        })
+
+    return out
+
+
 def _existing_derivatives_dirs():
     return [d for d in _DERIVATIVES_DIR_CANDIDATES if os.path.isdir(d)]
 
@@ -338,6 +431,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "rows": [],
                 "row_count": 0,
                 "truncated": False,
+                "auto_detected": [],
             })
             return
 
@@ -356,12 +450,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if truncated:
             data_rows = data_rows[:max_rows]
 
+        auto_detected = _auto_detect_statuses(headers, data_rows)
+
         self._send_json({
             "path": os.path.relpath(full_path, PROJECT_ROOT),
             "headers": headers,
             "rows": data_rows,
             "row_count": len(rows) - 1,
             "truncated": truncated,
+            "auto_detected": auto_detected,
         })
 
     def _handle_update_csv_cell(self):
@@ -469,6 +566,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "headers": [],
                 "rows": [],
                 "row_count": 0,
+                "auto_detected": [],
             })
             return
 
@@ -480,6 +578,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             "headers": headers,
             "rows": data_rows,
             "row_count": len(data_rows),
+            "auto_detected": _auto_detect_statuses(headers, data_rows),
         })
 
     def _handle_save_target_file(self):

@@ -1,5 +1,5 @@
 # bids-utils-mr
-Providing an easy to use interface for creating a config file and running [dcm2bids](unfmontreal.github.io/Dcm2Bids/) on [SPICE](https://k-cir.github.io/cir-wiki/SPICE/) from your local computer. This will convert raw dicoms to nifti, and order them according to BIDS.
+Providing an easy to use interface for creating a config file and running [dcm2bids](https://unfmontreal.github.io/Dcm2Bids/latest/) on [SPICE](https://k-cir.github.io/cir-wiki/SPICE/) from your local computer. This will convert raw dicoms to nifti, and order them according to BIDS.
 
 1. Clone this repository to your project folder on SPICE.
 2. Clone the repository: [serve-mr-bids](https://github.com/k-CIR/serve-mr-bids) to your local machine to connect to the service running on SPICE.

@@ -262,8 +262,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif parsed_url.path == "/stream-dcm2bids-job":
             self._handle_stream_dcm2bids_job(query_params)
 
-        else:
+        elif parsed_url.path in ("/", "/index.html"):
             super().do_GET()
+
+        else:
+            self.send_error(404, "Not found")
 
     def _send_auth_error(self):
         """Send authentication error response."""

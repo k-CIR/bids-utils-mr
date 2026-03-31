@@ -8,4 +8,5 @@ All processing is done by dcm2bids on SPICE. This repository provide an interfac
 
 See the cir-wiki pages: https://k-cir.github.io/cir-wiki/mrc/mrc-bids/ for a detailed description on how to use the interface.
 
-Image here.
+
+<img width="1614" height="1887" alt="image" src="https://github.com/user-attachments/assets/bcc95e7f-f81f-4b42-9f9e-4efff6551b80" />

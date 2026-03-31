@@ -1,2 +1,4 @@
 dcm2bids_helper/
 __pycache__/
+
+*csv

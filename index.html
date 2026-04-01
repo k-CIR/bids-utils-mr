@@ -312,7 +312,7 @@
       <div class="controls-row">
         <button class="btn" id="load-target-btn" onclick="loadTargetFile()">Load target</button>
         <button class="btn" id="save-target-btn" onclick="saveTargetFile()">Create/Save target</button>
-        <button class="btn" id="merge-completed-btn" onclick="showMergeDialog()">Merge completed</button>
+        <button class="btn" id="merge-completed-btn" onclick="showMergeDialog()">Add rows from completed sessions</button>
       </div>
       <label for="status-column-names" style="display:block; color:#9e9e9e; font-size:0.82rem; margin:0.4rem 0 0.3rem;">
         Status columns (comma-separated)
@@ -332,10 +332,19 @@
     <!-- Merge dialog overlay -->
     <div id="merge-dialog-overlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:999;"></div>
     <div id="merge-dialog" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#252526; border:1px solid #3c3c3c; border-radius:4px; padding:1.5rem; z-index:1000; min-width:400px; max-width:600px; box-shadow:0 0 20px rgba(0,0,0,0.8);">
-      <h3 style="margin:0 0 1rem; color:#d4d4d4; font-size:1rem;">Merge completed sessions</h3>
+      <h3 style="margin:0 0 1rem; color:#d4d4d4; font-size:1rem;">Add rows from completed sessions</h3>
       <p style="color:#9e9e9e; font-size:0.88rem; margin-bottom:1rem;">
-        Select a completed sessions file to append its rows to the current target.
+        Select a completed sessions CSV file to append its rows to the current target.
       </p>
+      <label for="merge-file-select" style="display:block; color:#9e9e9e; font-size:0.82rem; margin:0 0 0.4rem;">
+        Available files:
+      </label>
+      <select id="merge-file-select" class="status-select" style="width:100%; margin-bottom:0.8rem;" onchange="mergeFileSelected()">
+        <option value="">-- Select a file --</option>
+      </select>
+      <label for="merge-file-path" style="display:block; color:#9e9e9e; font-size:0.82rem; margin:0 0 0.3rem;">
+        Or enter path manually:
+      </label>
       <div class="path-row" style="margin-bottom:0.8rem;">
         <span class="path-static">File:</span>
         <input id="merge-file-path" class="path-input" type="text" spellcheck="false" placeholder="BIDS_pet/derivatives/completed.csv" />
@@ -1229,12 +1238,55 @@
     function showMergeDialog() {
       document.getElementById('merge-dialog-overlay').style.display = 'block';
       document.getElementById('merge-dialog').style.display = 'block';
+      loadCompletedSessionsFiles();
     }
 
     function closeMergeDialog() {
       document.getElementById('merge-dialog-overlay').style.display = 'none';
       document.getElementById('merge-dialog').style.display = 'none';
       document.getElementById('merge-file-path').value = '';
+      document.getElementById('merge-file-select').value = '';
+    }
+
+    async function loadCompletedSessionsFiles() {
+      const select = document.getElementById('merge-file-select');
+      select.innerHTML = '<option value="">-- Loading --</option>';
+      select.disabled = true;
+
+      try {
+        const res = await fetch('/get-completed-sessions-files');
+        if (!res.ok) {
+          throw new Error('HTTP ' + res.status + ': ' + await res.text());
+        }
+        const data = await res.json();
+        const files = data.completed_files || [];
+
+        if (!files || files.length === 0) {
+          select.innerHTML = '<option value="">-- No files found --</option>';
+          select.disabled = true;
+        } else {
+          select.innerHTML = '<option value="">-- Select a file --</option>';
+          for (const file of files) {
+            const option = document.createElement('option');
+            option.value = file;
+            option.textContent = file;
+            select.appendChild(option);
+          }
+          select.disabled = false;
+        }
+      } catch (err) {
+        console.error('Error loading completed sessions files:', err);
+        select.innerHTML = '<option value="">-- Error: ' + (err.message || 'Unknown error') + ' --</option>';
+        select.disabled = true;
+      }
+    }
+
+    function mergeFileSelected() {
+      const select = document.getElementById('merge-file-select');
+      const input = document.getElementById('merge-file-path');
+      if (select.value) {
+        input.value = select.value;
+      }
     }
 
     async function executeMerge() {

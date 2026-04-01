@@ -12,6 +12,7 @@ HTML overview tools, and CSV-based PET QC progress tracking.
 	- Lists CSV files directly inside `derivatives`.
 	- Loads a source CSV and manages a separate target QC tracker CSV.
 	- Supports read-only mode, editable status dropdowns, and merge-from-completed workflow.
+	- **Add rows from completed sessions**: Merge new rows from completed session files with automatic file discovery.
 
 ## CSV Tracker Workflow (PET QC overview tab)
 
@@ -40,10 +41,13 @@ Only CSV files directly inside `derivatives` are listed by the UI.
 
 ## Keeping progress.csv up to date
 
-When new sessions appear in the completed sessions source file:
+When new sessions appear in completed session files:
 
 1. Load your current `progress.csv` target.
-2. Click **Merge completed**.
-3. Select the updated `completed_sessions_*.csv` source file.
+2. Click **Add rows from completed sessions**.
+3. A dialog appears with:
+   - **Dropdown menu**: Automatically lists all CSV files containing the pattern `completed_pet_sessions` in the derivatives directory. Simply select from the list.
+   - **Manual path entry**: Alternatively, manually enter the file path if needed.
+4. Click **Merge** to append missing subject/session rows to `progress.csv`.
 
-Missing subject/session rows are appended to `progress.csv` while existing tracker values are preserved.
+Missing subject/session rows are appended while existing tracker values are preserved.

@@ -198,6 +198,40 @@ def _find_derivatives_csv_files(max_count=200):
     return csv_paths
 
 
+def _find_completed_pet_sessions_files(max_count=200):
+    """Return sorted CSV paths containing 'completed_pet_sessions' under derivatives dirs."""
+    csv_paths = []
+    seen = set()
+
+    try:
+        for derivatives_dir in _existing_derivatives_dirs():
+            try:
+                files = sorted(os.listdir(derivatives_dir))
+            except OSError:
+                continue
+
+            for filename in files:
+                abs_path = os.path.join(derivatives_dir, filename)
+                if not os.path.isfile(abs_path):
+                    continue
+                if not filename.lower().endswith(".csv"):
+                    continue
+                if "completed_pet_sessions" not in filename.lower():
+                    continue
+
+                rel_path = os.path.relpath(abs_path, PROJECT_ROOT)
+                if rel_path in seen:
+                    continue
+                seen.add(rel_path)
+                csv_paths.append(rel_path)
+                if len(csv_paths) >= max_count:
+                    return csv_paths
+    except Exception:
+        pass
+
+    return csv_paths
+
+
 def _get_csv_browser_config():
     """Return default CSV and warning for derivatives CSV browser."""
     found_derivatives_dir = bool(_existing_derivatives_dirs())
@@ -285,6 +319,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 "default_csv": cfg["default_csv"],
                 "warning": cfg["warning"],
                 "csv_files": cfg["csv_files"],
+            })
+
+        elif self.path == "/get-completed-sessions-files":
+            completed_files = _find_completed_pet_sessions_files()
+            self._send_json({
+                "completed_files": completed_files,
             })
 
         elif self.path.startswith("/get-csv"):

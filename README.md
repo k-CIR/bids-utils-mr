@@ -10,3 +10,6 @@ See the cir-wiki pages: https://k-cir.github.io/cir-wiki/mrc/mrc-bids/ for a det
 
 
 <img width="1614" height="1887" alt="image" src="https://github.com/user-attachments/assets/bcc95e7f-f81f-4b42-9f9e-4efff6551b80" />
+
+
+*Note: This repository is offered as, and built on, free and open source software and comes with no warranty what so ever. You are yourself ultimately responsible for your data, including making sure your it is safe and backed up.*

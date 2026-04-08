@@ -570,7 +570,7 @@
           const saved = stateMap.get(stateKey(row));
           return saved || {
             selected: { series_number: false, series_description: false, pulse_sequence_name: false, image_type: false },
-            datatype: '', task_name: '', acq: '', run: '', desc: '', suffix: '', other_suffix: '', intended_for: ''
+            datatype: '', task_name: '', acq: '', run: '', desc: '', suffix: '', other_suffix: ''
           };
         });
         if (prePopulate) {
@@ -626,7 +626,6 @@
           s.other_suffix = '';
         }
         s.task_name    = sc.TaskName    || '';
-        s.intended_for = sc.IntendedFor || '';
         const acqEnt  = ce.find(e => e.startsWith('acq-'));
         const runEnt  = ce.find(e => e.startsWith('run-'));
         const descEnt = ce.find(e => e.startsWith('desc-'));
@@ -664,7 +663,7 @@
       const dtypes = ['anat', 'func', 'dwi', 'perf', 'fmap'];
       let html = '<table class="config-table"><thead><tr>'
         + '<th colspan="4">Input</th>'
-        + '<th colspan="8" class="col-output"><strong>Output</strong></th>'
+        + '<th colspan="7" class="col-output"><strong>Output</strong></th>'
         + '</tr><tr>'
         + '<th>Series number</th>'
         + '<th>Series description</th>'
@@ -677,7 +676,6 @@
         + '<th>Description</th>'
         + '<th><strong>Suffix <span style="color:#f48771">*</span></strong></th>'
         + '<th>Other suffix</th>'
-        + '<th>Intended for</th>'
         + '</tr></thead><tbody>';
 
       tableRows.forEach((row, i) => {
@@ -716,8 +714,6 @@
             + '<option value="">--</option>' + suffixOpts + '</select></td>'
           + '<td><input class="tbl-input" type="text" value="' + escAttr(s.other_suffix || '') + '" placeholder="(optional)" '
             + 'oninput="updateOtherSuffix(' + i + ',this.value)"></td>'
-          + '<td><input class="tbl-input" type="text" value="' + escAttr(s.intended_for) + '" placeholder="(optional)" '
-            + 'oninput="updateTableState(' + i + ',\'intended_for\',this.value)"></td>'
           + '</tr>';
       });
       html += '</tbody></table>';
@@ -802,7 +798,6 @@
         // sidecar_changes
         const sc = {};
         if (s.task_name.trim())    sc.TaskName    = s.task_name.trim();
-        if (s.intended_for.trim()) sc.IntendedFor = s.intended_for.trim();
         if (Object.keys(sc).length) desc.sidecar_changes = sc;
 
         descriptions.push(desc);
@@ -902,7 +897,7 @@
         // Reset all output fields, then fill from config
         tableState = tableRows.map(() => ({
           selected: { series_number: false, series_description: false, pulse_sequence_name: false, image_type: false },
-          datatype: '', task_name: '', acq: '', run: '', desc: '', suffix: '', other_suffix: '', intended_for: ''
+          datatype: '', task_name: '', acq: '', run: '', desc: '', suffix: '', other_suffix: ''
         }));
         prePopulateFromConfig(data.config);
         renderTable();

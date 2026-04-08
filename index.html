@@ -747,9 +747,9 @@
       const suffixOpts = (SUFFIX_OPTS[value] || []).map(v =>
         '<option value="' + v + '">' + v + '</option>'
       ).join('');
-      const sel = row.cells[8].querySelector('select');
+      const sel = row.cells[9].querySelector('select');
       if (sel) sel.innerHTML = '<option value="">--</option>' + suffixOpts;
-      const otherInput = row.cells[9].querySelector('input');
+      const otherInput = row.cells[10].querySelector('input');
       if (otherInput) otherInput.value = '';
     }
 
@@ -758,7 +758,7 @@
       tableState[rowIdx].other_suffix = '';
       const tbody = document.querySelector('.config-table tbody');
       if (!tbody) return;
-      const otherInput = tbody.rows[rowIdx].cells[9].querySelector('input');
+      const otherInput = tbody.rows[rowIdx].cells[10].querySelector('input');
       if (otherInput) otherInput.value = '';
     }
 
@@ -768,7 +768,7 @@
         tableState[rowIdx].suffix = '';
         const tbody = document.querySelector('.config-table tbody');
         if (!tbody) return;
-        const sel = tbody.rows[rowIdx].cells[8].querySelector('select');
+        const sel = tbody.rows[rowIdx].cells[9].querySelector('select');
         if (sel) sel.value = '';
       }
     }

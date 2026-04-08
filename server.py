@@ -16,14 +16,35 @@ PORT = int(os.environ.get("PORT", 8080))
 def _debug_mode_enabled():
     return str(os.environ.get("BIDS_UTILS_DEBUG", "")).strip().lower() in {"1", "true", "yes", "on"}
 
+
+def _resolve_config_path(value, default_path):
+    raw = str(value or "").strip()
+    if not raw:
+        return os.path.realpath(default_path)
+    if os.path.isabs(raw):
+        return os.path.realpath(raw)
+    return os.path.realpath(os.path.join(PROJECT_ROOT, raw))
+
+
+def _split_path_list(value):
+    return [p.strip() for p in str(value or "").split(":") if p.strip()]
+
 # Paths derived from the location of this script file
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 UTILS_DIR = os.path.dirname(_SCRIPT_DIR)
 PROJECT_ROOT = os.path.dirname(UTILS_DIR)
-_RAW_PET_DIR = os.path.join(PROJECT_ROOT, "BIDS_pet")
-_DERIVATIVES_DIR_CANDIDATES = [
-    os.path.join(_RAW_PET_DIR, "derivatives"),
+_CSV_RAW_PET_DIR = os.path.join(PROJECT_ROOT, "BIDS_pet")
+_DEFAULT_PET_DATA_DIR = os.path.join(PROJECT_ROOT, "BIDS")
+_RAW_PET_DIR = _resolve_config_path(os.environ.get("BIDS_UTILS_PET_DATA_DIR"), _DEFAULT_PET_DATA_DIR)
+_CSV_DERIVATIVES_DIR_CANDIDATES = [
+    os.path.join(_CSV_RAW_PET_DIR, "derivatives"),
     os.path.join(PROJECT_ROOT, "derivatives"),
+]
+_PET_DERIVATIVES_DIR_CANDIDATES = [
+    _resolve_config_path(path, path)
+    for path in _split_path_list(os.environ.get("BIDS_UTILS_PET_DERIVATIVES_DIRS"))
+] or [
+    os.path.join(_RAW_PET_DIR, "derivatives"),
 ]
 
 
@@ -47,19 +68,25 @@ def _normalize_session(value):
 
 def _detect_petprep_done(subject, session):
     """Detect whether PETPrep outputs exist for subject/session."""
-    candidate_dirs = [
-        os.path.join(_RAW_PET_DIR, "derivatives", "petprep", subject, session),
-        os.path.join(PROJECT_ROOT, "derivatives", "petprep", subject, session),
-        os.path.join(_RAW_PET_DIR, "derivatives", "petprep", subject, session, "pet"),
-        os.path.join(PROJECT_ROOT, "derivatives", "petprep", subject, session, "pet"),
-        os.path.join(_RAW_PET_DIR, "derivatives", subject, session, "pet"),
-        os.path.join(PROJECT_ROOT, "derivatives", subject, session, "pet"),
-    ]
+    candidate_dirs = []
+    for derivatives_dir in _PET_DERIVATIVES_DIR_CANDIDATES:
+        candidate_dirs.extend([
+            os.path.join(derivatives_dir, "petprep", subject, session),
+            os.path.join(derivatives_dir, "petprep", subject, session, "pet"),
+        #    os.path.join(derivatives_dir, subject, session, "pet"),
+        ])
 
     candidate_files = [
         f"{subject}_{session}_pet.nii.gz",
         f"{subject}_{session}_desc-preproc_pet.nii.gz",
         f"{subject}_{session}_space-T1w_desc-preproc_pet.nii.gz",
+    ]
+    candidate_prefixes = [
+        f"{subject}_{session}_",
+    ]
+    candidate_suffixes = [
+        "_pet.nii.gz",
+        "_desc-preproc_pet.nii.gz",
     ]
 
     for base_dir in candidate_dirs:
@@ -70,7 +97,12 @@ def _detect_petprep_done(subject, session):
         if os.path.isdir(base_dir):
             try:
                 for entry in os.listdir(base_dir):
-                    if entry.lower().endswith(".nii.gz"):
+                    lowered = entry.lower()
+                    if not lowered.endswith(".nii.gz"):
+                        continue
+                    if not any(lowered.startswith(prefix.lower()) for prefix in candidate_prefixes):
+                        continue
+                    if any(lowered.endswith(suffix.lower()) for suffix in candidate_suffixes):
                         return True
             except OSError:
                 pass
@@ -120,8 +152,8 @@ def _auto_detect_statuses(headers, rows):
     return out
 
 
-def _existing_derivatives_dirs():
-    return [d for d in _DERIVATIVES_DIR_CANDIDATES if os.path.isdir(d)]
+def _existing_csv_derivatives_dirs():
+    return [d for d in _CSV_DERIVATIVES_DIR_CANDIDATES if os.path.isdir(d)]
 
 
 def _is_top_level_file_in_dir(file_path, parent_dir):
@@ -138,7 +170,7 @@ def _resolve_top_level_derivatives_csv_path(rel_path):
     if not full_path.lower().endswith(".csv"):
         return None
 
-    for derivatives_dir in _existing_derivatives_dirs():
+    for derivatives_dir in _existing_csv_derivatives_dirs():
         if _is_top_level_file_in_dir(full_path, derivatives_dir):
             return full_path
     return None
@@ -182,7 +214,7 @@ def _find_derivatives_csv_files(max_count=200):
     csv_paths = []
     seen = set()
 
-    for derivatives_dir in _existing_derivatives_dirs():
+    for derivatives_dir in _existing_csv_derivatives_dirs():
         files = sorted(os.listdir(derivatives_dir))
         for filename in files:
             abs_path = os.path.join(derivatives_dir, filename)
@@ -208,7 +240,7 @@ def _find_completed_pet_sessions_files(max_count=200):
     seen = set()
 
     try:
-        for derivatives_dir in _existing_derivatives_dirs():
+        for derivatives_dir in _existing_csv_derivatives_dirs():
             try:
                 files = sorted(os.listdir(derivatives_dir))
             except OSError:
@@ -238,7 +270,7 @@ def _find_completed_pet_sessions_files(max_count=200):
 
 def _get_csv_browser_config():
     """Return default CSV and warning for derivatives CSV browser."""
-    found_derivatives_dir = bool(_existing_derivatives_dirs())
+    found_derivatives_dir = bool(_existing_csv_derivatives_dirs())
     if not found_derivatives_dir:
         return {
             "default_csv": None,
@@ -351,6 +383,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_update_csv_cell()
         elif self.path == "/save-target-file":
             self._handle_save_target_file()
+        elif self.path == "/reset-target-file":
+            self._handle_reset_target_file()
         elif self.path == "/merge-completed-sessions":
             self._handle_merge_completed_sessions()
         else:
@@ -671,6 +705,52 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 writer.writerows(rows)
         except Exception:
             self.send_error(500, "Failed to write file")
+            return
+
+        self._send_json({"ok": True, "path": os.path.relpath(full_path, PROJECT_ROOT)})
+
+    def _handle_reset_target_file(self):
+        """Delete and recreate the target CSV file with provided content."""
+        content_length = int(self.headers.get("Content-Length", "0"))
+        if content_length <= 0:
+            self.send_error(400, "Missing request body")
+            return
+
+        try:
+            raw = self.rfile.read(content_length)
+            payload = json.loads(raw.decode("utf-8"))
+        except Exception:
+            self.send_error(400, "Invalid JSON body")
+            return
+
+        rel_path = str(payload.get("path", "")).strip()
+        headers = payload.get("headers", [])
+        rows = payload.get("rows", [])
+
+        if not rel_path:
+            self.send_error(400, "Missing path")
+            return
+
+        full_path = _resolve_top_level_derivatives_csv_path(rel_path)
+        if not full_path:
+            self.send_error(400, "Path must be a .csv directly in derivatives")
+            return
+
+        if os.path.isfile(full_path):
+            try:
+                os.remove(full_path)
+            except Exception:
+                self.send_error(500, "Failed to delete existing target file")
+                return
+
+        try:
+            with open(full_path, "w", encoding="utf-8", newline="") as f:
+                writer = csv.writer(f)
+                if headers:
+                    writer.writerow(headers)
+                writer.writerows(rows)
+        except Exception:
+            self.send_error(500, "Failed to recreate target file")
             return
 
         self._send_json({"ok": True, "path": os.path.relpath(full_path, PROJECT_ROOT)})

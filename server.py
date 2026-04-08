@@ -10,7 +10,11 @@ import sys
 import csv
 from urllib.parse import urlparse, parse_qs
 
-PORT = int(os.environ.get("PORT", 8090))
+PORT = int(os.environ.get("PORT", 8080))
+
+
+def _debug_mode_enabled():
+    return str(os.environ.get("BIDS_UTILS_DEBUG", "")).strip().lower() in {"1", "true", "yes", "on"}
 
 # Paths derived from the location of this script file
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -817,21 +821,24 @@ if __name__ == "__main__":
         if exc.errno != errno.EADDRINUSE:
             raise
 
-        print(
-            f"Error: Port {PORT} is already in use.\n"
-            "This conflict is on the remote host (compute.kcir.se).\n"
-            "If you already have a remote shell, run:\n"
-            f"  lsof -i :{PORT}\n"
-            f"  fuser -n tcp {PORT}\n"
-            "Then stop the process (replace <PID>):\n"
-            "  kill <PID>\n"
-            "If needed: kill -9 <PID>\n"
-            "\n"
-            "From local Git Bash, run the same checks over SSH:\n"
-            f"  ssh <username>@compute.kcir.se \"lsof -i :{PORT}\"\n"
-            f"  ssh <username>@compute.kcir.se \"fuser -n tcp {PORT}\"\n"
-            "Then stop by PID over SSH:\n"
-            "  ssh <username>@compute.kcir.se \"kill <PID>\"",
-            file=sys.stderr,
-        )
+        if _debug_mode_enabled():
+            print(
+                f"Error: Port {PORT} is already in use.\n"
+                "This conflict is on the remote host (compute.kcir.se).\n"
+                "If you already have a remote shell, run:\n"
+                f"  lsof -i :{PORT}\n"
+                f"  fuser -n tcp {PORT}\n"
+                "Then stop the process (replace <PID>):\n"
+                "  kill <PID>\n"
+                "If needed: kill -9 <PID>\n"
+                "\n"
+                "From local Git Bash, run the same checks over SSH:\n"
+                f"  ssh <username>@compute.kcir.se \"lsof -i :{PORT}\"\n"
+                f"  ssh <username>@compute.kcir.se \"fuser -n tcp {PORT}\"\n"
+                "Then stop by PID over SSH:\n"
+                "  ssh <username>@compute.kcir.se \"kill <PID>\"",
+                file=sys.stderr,
+            )
+        else:
+            print(f"Error: Port {PORT} is already in use.", file=sys.stderr)
         raise SystemExit(1)

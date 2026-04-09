@@ -8,7 +8,8 @@ import re
 import errno
 import sys
 import csv
-from urllib.parse import urlparse, parse_qs
+import mimetypes
+from urllib.parse import urlparse, parse_qs, quote, unquote
 
 PORT = int(os.environ.get("PORT", 8080))
 
@@ -348,6 +349,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif self.path.startswith("/open-html"):
             self._handle_open_html()
 
+        elif self.path.startswith("/open-file/"):
+            self._handle_open_file()
+
         elif self.path == "/get-csv-config":
             cfg = _get_csv_browser_config()
             self._send_json({
@@ -433,7 +437,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 size_text = f"{size} B" if size >= 0 else "size unknown"
                 emit({
                     "file": item["file"],
-                    "open_url": "/open-html?path=" + item["rel_path"],
+                    "open_url": "/open-file/" + quote(item["rel_path"], safe="/"),
                     "size_text": size_text,
                 })
             rc = 0
@@ -444,6 +448,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         emit({"done": True, "returncode": rc})
 
     def _handle_open_html(self):
+        """Backward-compatible HTML opener; redirects to /open-file/ for proper asset resolution."""
         params = parse_qs(urlparse(self.path).query)
         rel_path = params.get("path", [None])[0]
         if not rel_path:
@@ -461,6 +466,31 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_error(404, "File not found")
             return
 
+        # Redirect to path-based URL so relative assets (svg/css/js) resolve under the same folder.
+        new_path = "/open-file/" + quote(rel_path, safe="/")
+        self.send_response(302)
+        self.send_header("Location", new_path)
+        self.end_headers()
+
+    def _handle_open_file(self):
+        """Serve a project file by path for browser rendering with correct relative URLs."""
+        parsed = urlparse(self.path)
+        prefix = "/open-file/"
+        rel_encoded = parsed.path[len(prefix):]
+        rel_path = unquote(rel_encoded)
+
+        if not rel_path:
+            self.send_error(400, "Missing file path")
+            return
+
+        full_path = self._resolve_project_path(rel_path)
+        if not full_path:
+            self.send_error(403, "Path outside project root")
+            return
+        if not os.path.isfile(full_path):
+            self.send_error(404, "File not found")
+            return
+
         try:
             with open(full_path, "rb") as f:
                 body = f.read()
@@ -468,8 +498,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_error(500, "Failed to read file")
             return
 
+        content_type, _ = mimetypes.guess_type(full_path)
+        if not content_type:
+            content_type = "application/octet-stream"
+        if content_type.startswith("text/"):
+            content_type += "; charset=utf-8"
+
         self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

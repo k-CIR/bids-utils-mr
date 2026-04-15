@@ -1,4 +1,4 @@
-dcm2bids_helper/
 __pycache__/
-
-*csv
+tabs/*/dcm2bids_helper/
+tabs/*/*.csv
+server.py.bak

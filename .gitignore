@@ -1,4 +1,3 @@
-__pycache__/
+__pycache__
 tabs/*/dcm2bids_helper/
 tabs/*/*.csv
-server.py.bak

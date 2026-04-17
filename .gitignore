@@ -1,3 +1,5 @@
 __pycache__
 tabs/*/dcm2bids_helper/
 tabs/*/*.csv
+dcm2bids_config_mr.json
+dcm2bids_config_pet.json

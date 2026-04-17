@@ -5,6 +5,7 @@ TAB_METADATA is read by the server at startup to register this tab.
 register() is called once to populate the shared GET/POST route dicts.
 """
 import json
+import importlib.util
 import os
 import re
 import subprocess
@@ -12,11 +13,19 @@ import subprocess
 # Sibling modules live in the same directory
 import sys
 _TAB_DIR = os.path.dirname(os.path.abspath(__file__))
-if _TAB_DIR not in sys.path:
-    sys.path.insert(0, _TAB_DIR)
 
-import config_builder
-import bids_runner
+_CFG_PATH = os.path.join(_TAB_DIR, "config_builder.py")
+_CFG_SPEC = importlib.util.spec_from_file_location("mr_bids_config_builder", _CFG_PATH)
+config_builder = importlib.util.module_from_spec(_CFG_SPEC)
+_CFG_SPEC.loader.exec_module(config_builder)
+_LOCAL_CONFIG_FILE = os.path.realpath(os.path.join(_TAB_DIR, "..", "..", "dcm2bids_config_mr.json"))
+if os.path.realpath(getattr(config_builder, "CONFIG_FILE", _LOCAL_CONFIG_FILE)) != _LOCAL_CONFIG_FILE:
+    config_builder.CONFIG_FILE = _LOCAL_CONFIG_FILE
+
+_RUNNER_PATH = os.path.join(_TAB_DIR, "bids_runner.py")
+_RUNNER_SPEC = importlib.util.spec_from_file_location("mr_bids_runner", _RUNNER_PATH)
+bids_runner = importlib.util.module_from_spec(_RUNNER_SPEC)
+_RUNNER_SPEC.loader.exec_module(bids_runner)
 
 # ── Tab metadata ──────────────────────────────────────────────────────────────
 TAB_METADATA = {
@@ -26,9 +35,9 @@ TAB_METADATA = {
 }
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-# PROJECT_ROOT is three levels up: tabs/mr-bids/ → tabs/ → bids-utils-mr/ → project root
+# PROJECT_ROOT is four levels up: tabs/mr-bids/ → tabs/ → bids-utils-mr/ → utils/ → project root
 _BIDS_UTILS_DIR = os.path.dirname(os.path.dirname(_TAB_DIR))  # …/bids-utils-mr/
-_PROJECT_ROOT   = os.path.dirname(_BIDS_UTILS_DIR)            # …/<project>/
+_PROJECT_ROOT   = os.path.dirname(os.path.dirname(_BIDS_UTILS_DIR))  # …/<project>/
 _RAW_MRI_DIR    = os.path.join(_PROJECT_ROOT, "raw", "mri")
 _OUTPUT_DIR     = os.path.join(_TAB_DIR, "dcm2bids_helper")
 
@@ -323,14 +332,14 @@ def _handle_run_dcm2bids(h, body):
 
 def register(get_routes, post_routes):
     """Populate get_routes and post_routes with this tab's endpoints."""
-    get_routes["/get-config"]              = _handle_get_config
-    get_routes["/get-helper-summary"]      = _handle_get_helper_summary
-    get_routes["/get-bids-config"]         = _handle_get_bids_config
-    get_routes["/discover-sessions"]       = _handle_discover_sessions
-    get_routes["/get-recode-table"]        = _handle_get_recode_table
-    get_routes["/run-dcm2bids-helper"]     = _handle_run_dcm2bids_helper
-    get_routes["/stream-dcm2bids-job"]     = _handle_stream_dcm2bids_job
+    get_routes["/mr-get-config"]           = _handle_get_config
+    get_routes["/mr-get-helper-summary"]   = _handle_get_helper_summary
+    get_routes["/mr-get-bids-config"]      = _handle_get_bids_config
+    get_routes["/mr-discover-sessions"]    = _handle_discover_sessions
+    get_routes["/mr-get-recode-table"]     = _handle_get_recode_table
+    get_routes["/mr-run-dcm2bids-helper"]  = _handle_run_dcm2bids_helper
+    get_routes["/mr-stream-dcm2bids-job"]  = _handle_stream_dcm2bids_job
 
-    post_routes["/save-bids-config"]       = _handle_save_bids_config
-    post_routes["/save-recode-table"]      = _handle_save_recode_table
-    post_routes["/run-dcm2bids"]           = _handle_run_dcm2bids
+    post_routes["/mr-save-bids-config"]    = _handle_save_bids_config
+    post_routes["/mr-save-recode-table"]   = _handle_save_recode_table
+    post_routes["/mr-run-dcm2bids"]        = _handle_run_dcm2bids

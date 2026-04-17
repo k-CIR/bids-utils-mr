@@ -1,15 +1,20 @@
 <!-- PET BIDS tab fragment -->
 <!-- ── Sub-tab navigation ── -->
 <div class="tabs" id="pet-bids-subtab-bar">
-  <button class="tab-btn active" id="pet-subtab-overview" onclick="petBids.switchSubTab('overview')">PET overview</button>
+  <button class="tab-btn active" id="pet-subtab-raw"      onclick="petBids.switchSubTab('raw')">Config helper</button>
+  <button class="tab-btn"        id="pet-subtab-editor"   onclick="petBids.switchSubTab('editor')">Config editor</button>
+  <button class="tab-btn"        id="pet-subtab-makebids" onclick="petBids.switchSubTab('makebids')">Make BIDS</button>
+  <button class="tab-btn"        id="pet-subtab-petprep"  onclick="petBids.switchSubTab('petprep')">Run PETPrep</button>
+  <button class="tab-btn"        id="pet-subtab-overview" onclick="petBids.switchSubTab('overview')">PETPrep html browser</button>
   <button class="tab-btn"        id="pet-subtab-qc"       onclick="petBids.switchSubTab('qc')">PET QC overview</button>
 </div>
 
 <!-- ── PET overview ── -->
-<div id="pet-tab-overview" class="tab-pane active">
+<div id="pet-tab-overview" class="tab-pane">
   <p class="description">
-    Show a readable overview of all folders and files in the PET raw data directory.
-    A default path is loaded automatically, and you can change it if needed.
+    Show a readable overview of PETPrep HTML outputs under
+    <code>BIDS/derivatives/petprep</code>.
+    A default path is loaded automatically.
   </p>
 
   <div id="path-warn" class="warn" style="display:none;"></div>
@@ -18,12 +23,92 @@
     <span class="path-static" id="path-static">/data/projects/…</span>
     <span class="path-static">/</span>
     <input id="overview-path" class="path-input" type="text"
-           spellcheck="false" placeholder="BIDS_pet/..." />
+           spellcheck="false" placeholder="BIDS/derivatives/petprep/..." />
   </div>
 
   <button class="btn" id="overview-btn" onclick="petBids.runOverview()">Show file overview</button>
 
   <div id="overview-output">Output will appear here…</div>
+</div>
+
+<!-- ── Raw data overview ── -->
+<div id="pet-tab-raw" class="tab-pane active">
+  <p style="margin:0 0 0.4rem; color:#d4d4d4; font-weight:600; font-size:2rem;">1. Analyze DICOM fields</p>
+  <p class="description">
+    Select one representative PET session from your data and use dcm2bids helper to extract DICOM
+    fields that can be used to organize your data. The first session in your data is selected by default.
+  </p>
+
+  <div id="raw-path-warn" class="warn" style="display:none;"></div>
+
+  <div class="path-row">
+    <span class="path-static" id="raw-path-static">/data/projects/…</span>
+    <span class="path-static">/</span>
+    <input id="raw-path" class="path-input" type="text"
+           spellcheck="false" placeholder="raw/bmic/..." />
+  </div>
+
+  <label class="force-label">
+    <input type="checkbox" id="pet-force-check" />
+    Force dcm2bids helper &ndash; overwrite previous helper output for the selected session
+  </label>
+
+  <button class="btn" id="raw-btn" onclick="petBids.runRawDataOverview()">Analyze DICOM fields</button>
+
+  <div id="raw-output" style="background:#0d0d0d; border:1px solid #3c3c3c; border-radius:4px; padding:0.8rem 1rem; 
+           white-space:pre-wrap; min-height:10rem; max-height:600px; overflow-y:auto; line-height:1.55; 
+           font-size:0.85rem; color:#c8c8c8; font-family:monospace;">Output will appear here…</div>
+
+  <!-- ── Config builder ── -->
+  <div id="pet-config-builder-section" style="display:none; margin-top:1.8rem;">
+    <p style="margin:0 0 0.4rem; color:#d4d4d4; font-weight:600; font-size:2rem;">2. Specify config</p>
+    <p class="description" style="margin:0 0 0.8rem;">
+      Click input cells to select PET-relevant criteria for each row.
+      Fill in tracer/reconstruction entities, then press <strong>Generate config</strong> to
+      write <code>dcm2bids_config_pet.json</code>.
+    </p>
+    <div style="overflow-x:auto;">
+      <div id="pet-config-table-container"></div>
+    </div>
+    <div id="pet-config-dup-warn" class="warn" style="display:none; margin-top:0.6rem;"></div>
+    <div style="margin-top:0.9rem; display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap;">
+      <button class="btn" onclick="petBids.generateConfig()">Generate config</button>
+      <button class="btn btn-secondary" onclick="petBids.appendToConfig()">Append to config</button>
+      <button class="btn btn-secondary" onclick="petBids.loadConfigToTable()">Load config to table</button>
+      <span id="pet-generate-status" style="font-size:0.87rem;"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Config editor ── -->
+<div id="pet-tab-editor" class="tab-pane">
+  <p class="description">
+    View and edit <code>dcm2bids_config_pet.json</code> directly.
+    Changes saved here overwrite any previously generated PET config.
+  </p>
+  <div class="editor-wrap">
+    <div id="pet-editor-lines" class="editor-lines">1</div>
+    <textarea id="pet-config-editor-text" class="config-editor-ta" spellcheck="false"
+              placeholder="No config file found. Generate one from the Config helper tab."
+              oninput="petBids.validateEditorJson(); petBids.updateLineNumbers()"
+              onscroll="petBids.syncLineScroll()"></textarea>
+  </div>
+  <div id="pet-editor-json-warn" style="display:none; margin-top:0.4rem; font-size:0.85rem; color:#f48771;"></div>
+  <div style="margin-top:0.7rem; display:flex; gap:0.6rem; align-items:center; flex-wrap:wrap;">
+    <button class="btn" onclick="petBids.saveConfigEditor()">Save</button>
+    <button class="btn btn-secondary" onclick="petBids.loadConfigEditor()">Reload</button>
+    <span id="pet-editor-status" style="font-size:0.87rem;"></span>
+  </div>
+</div>
+
+<!-- ── Make BIDS ── -->
+<div id="pet-tab-makebids" class="tab-pane">
+  <p class="description">Under development.</p>
+</div>
+
+<!-- ── Run PETPrep ── -->
+<div id="pet-tab-petprep" class="tab-pane">
+  <p class="description">Under development.</p>
 </div>
 
 <!-- ── PET QC Overview ── -->
@@ -241,6 +326,25 @@
 <script>
   const petBids = (() => {
     let _token = null;
+    let _projectRoot = '';
+
+    function _normalizeDisplayPath(value) {
+      let path = String(value || '').trim().replace(/\\/g, '/');
+      const root = String(_projectRoot || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
+      if (root && path === root) {
+        return '';
+      }
+      if (root && path.startsWith(root + '/')) {
+        path = path.slice(root.length + 1);
+      }
+      while (path.startsWith('../')) {
+        path = path.slice(3);
+      }
+      while (path.startsWith('./')) {
+        path = path.slice(2);
+      }
+      return path;
+    }
 
     function _addToken(url) {
       if (!_token) return url;
@@ -261,18 +365,46 @@
 
     let activeSource = null;
     let currentCsv = { path: '', headers: [], rows: [], writableColumns: [], mode: 'source' };
+    let tableRows = [];
+    let tableState = [];
+    let _helperDebug = {};
+    const stateMap = new Map();
+    let _petHelperRunCompleted = false;
+
+    function _stateKey(row) {
+      return String(row.series_number) + '|' + row.series_description
+        + '|' + (row.protocol_name || '') + '|' + (row.modality || '')
+        + '|' + (row.image_type || '') + '|' + (row.radiopharmaceutical || '');
+    }
+
+    const SUFFIX_OPTS = {
+      pet:  ['pet'],
+      anat: ['T1w','T2w'],
+      fmap: ['fieldmap','epi'],
+    };
 
     function switchSubTab(name) {
       document.querySelectorAll('#pet-bids-subtab-bar .tab-btn').forEach(b =>
         b.classList.toggle('active', b.id === 'pet-subtab-' + name)
       );
-      document.querySelectorAll('#pet-tab-overview, #pet-tab-qc').forEach(p =>
+      document.querySelectorAll('#pet-tab-overview, #pet-tab-raw, #pet-tab-editor, #pet-tab-makebids, #pet-tab-petprep, #pet-tab-qc').forEach(p =>
         p.classList.remove('active')
       );
       document.getElementById('pet-tab-' + name).classList.add('active');
+      if (name === 'editor') {
+        loadConfigEditor();
+      }
     }
 
     async function initializeAndLoad() {
+      const overviewInput = document.getElementById('overview-path');
+      const rawInput = document.getElementById('raw-path');
+      if (overviewInput && !overviewInput.value.trim()) {
+        overviewInput.value = 'BIDS/derivatives/petprep';
+      }
+      if (rawInput && !rawInput.value.trim()) {
+        rawInput.value = 'raw/bmic';
+      }
       try {
         const defaultSelected = ['subject', 'session'];
         const defaultTracking = [
@@ -287,15 +419,34 @@
         document.getElementById('csv-columns').value = defaultSelected.join(', ');
         document.getElementById('status-column-names').value = defaultTracking.join(', ');
 
-        const petCfg = await fetch(_addToken('/get-config')).then(r => r.json());
+        const petCfgResp = await fetch(_addToken('/pet-get-config'));
+        if (!petCfgResp.ok) {
+          throw new Error('Failed to load PET defaults');
+        }
+        const petCfg = await petCfgResp.json();
+        _projectRoot = petCfg.project_root || '';
         document.getElementById('path-static').textContent = petCfg.project_root;
+        document.getElementById('raw-path-static').textContent = petCfg.project_root;
         if (petCfg.warning) {
           const w = document.getElementById('path-warn');
           w.textContent = '⚠ ' + petCfg.warning;
           w.style.display = '';
+          const rawWarn = document.getElementById('raw-path-warn');
+          rawWarn.textContent = '⚠ ' + petCfg.warning;
+          rawWarn.style.display = '';
         }
         if (petCfg.default_path) {
-          document.getElementById('overview-path').value = petCfg.default_path;
+          const rawDisplayPath = _normalizeDisplayPath(petCfg.default_path);
+          document.getElementById('raw-path').value = rawDisplayPath;
+        }
+        if (petCfg.html_default_path) {
+          const htmlDisplayPath = _normalizeDisplayPath(petCfg.html_default_path);
+          document.getElementById('overview-path').value = htmlDisplayPath;
+        }
+        if (petCfg.html_warning) {
+          const w = document.getElementById('path-warn');
+          w.textContent = '⚠ ' + petCfg.html_warning;
+          w.style.display = '';
         }
 
         const csvCfg = await fetch(_addToken('/get-csv-config')).then(r => r.json());
@@ -312,6 +463,403 @@
         }
         renderCsvFileList(csvCfg.csv_files || []);
       } catch (_) { /* ignore */ }
+    }
+
+    async function loadHelperSummary(prePopulate) {
+      tableRows.forEach((row, i) =>
+        stateMap.set(_stateKey(row), JSON.parse(JSON.stringify(tableState[i])))
+      );
+      try {
+        const resp = await fetch(_addToken('/pet-get-helper-summary'));
+        if (!resp.ok) {
+          const section = document.getElementById('pet-config-builder-section');
+          const statusEl = document.getElementById('pet-generate-status');
+          if (_petHelperRunCompleted) {
+            section.style.display = '';
+            statusEl.innerHTML = '<span class="t-err">Failed to load PET helper summary (HTTP ' + resp.status + ').</span>';
+          }
+          return;
+        }
+        const data = await resp.json();
+        _helperDebug = data.debug || {};
+        tableRows = data.rows || [];
+        tableState = tableRows.map(row => {
+          const saved = stateMap.get(_stateKey(row));
+          return saved || {
+            selected: { series_number: false, series_description: false, protocol_name: false, modality: false, image_type: false, radiopharmaceutical: false },
+            datatype: 'pet', trc: '', rec: '', run: '', desc: '', suffix: 'pet', other_suffix: ''
+          };
+        });
+
+        if (prePopulate) {
+          const cfgResp = await fetch(_addToken('/pet-get-bids-config'));
+          if (cfgResp.ok) {
+            const cfgData = await cfgResp.json();
+            if (cfgData.config) _prePopulateFromConfig(cfgData.config);
+          }
+        }
+        renderConfigTable();
+      } catch (e) {
+        console.error('Failed to load PET helper summary:', e);
+        const section = document.getElementById('pet-config-builder-section');
+        const statusEl = document.getElementById('pet-generate-status');
+        if (_petHelperRunCompleted) {
+          section.style.display = '';
+          statusEl.innerHTML = '<span class="t-err">Failed to read PET helper output.</span>';
+        }
+      }
+    }
+
+    function _prePopulateFromConfig(configData) {
+      if (!configData || !Array.isArray(configData.descriptions)) return;
+      for (const desc of configData.descriptions) {
+        const criteria = desc.criteria || {};
+        if (!Object.keys(criteria).length) continue;
+        const idx = tableRows.findIndex(row => {
+          if ('SeriesDescription' in criteria && criteria.SeriesDescription !== row.series_description) return false;
+          if ('SeriesNumber' in criteria && Number(criteria.SeriesNumber) !== row.series_number) return false;
+          if ('ProtocolName' in criteria && criteria.ProtocolName !== row.protocol_name) return false;
+          if ('Modality' in criteria && criteria.Modality !== row.modality) return false;
+          if ('Radiopharmaceutical' in criteria && criteria.Radiopharmaceutical !== row.radiopharmaceutical) return false;
+          if ('ImageType' in criteria) {
+            const rowList = (row.image_type || '').split(',').map(x => x.trim()).filter(Boolean);
+            const criList = Array.isArray(criteria.ImageType) ? criteria.ImageType : [];
+            if (criList.some(v => !rowList.includes(v))) return false;
+          }
+          return true;
+        });
+        if (idx < 0) continue;
+        const s = tableState[idx];
+        const ce = Array.isArray(desc.custom_entities) ? desc.custom_entities : [];
+        const sc = desc.sidecar_changes || {};
+
+        if ('SeriesDescription' in criteria) s.selected.series_description = true;
+        if ('SeriesNumber' in criteria) s.selected.series_number = true;
+        if ('ProtocolName' in criteria) s.selected.protocol_name = true;
+        if ('Modality' in criteria) s.selected.modality = true;
+        if ('ImageType' in criteria) s.selected.image_type = true;
+        if ('Radiopharmaceutical' in criteria) s.selected.radiopharmaceutical = true;
+        s.datatype = desc.datatype || '';
+
+        const knownSuffixes = SUFFIX_OPTS[s.datatype] || [];
+        if (knownSuffixes.includes(desc.suffix)) {
+          s.suffix = desc.suffix || '';
+          s.other_suffix = '';
+        } else if (desc.suffix) {
+          s.suffix = '';
+          s.other_suffix = desc.suffix;
+        } else {
+          s.suffix = '';
+          s.other_suffix = '';
+        }
+
+        const trcEnt = ce.find(e => e.startsWith('trc-'));
+        const recEnt = ce.find(e => e.startsWith('rec-'));
+        const runEnt = ce.find(e => e.startsWith('run-'));
+        const descEnt = ce.find(e => e.startsWith('desc-'));
+        s.trc = trcEnt ? trcEnt.slice(4) : '';
+        s.rec = recEnt ? recEnt.slice(4) : '';
+        s.run = runEnt ? runEnt.slice(4) : '';
+        s.desc = descEnt ? descEnt.slice(5) : '';
+      }
+    }
+
+    function renderConfigTable() {
+      const section = document.getElementById('pet-config-builder-section');
+      const container = document.getElementById('pet-config-table-container');
+      const warnEl = document.getElementById('pet-config-dup-warn');
+      if (!tableRows.length) {
+        if (_petHelperRunCompleted) {
+          section.style.display = '';
+          container.innerHTML = '<div style="padding:0.8rem 0; color:#d7ba7d;">No PET helper rows found for this run. Verify the selected path contains PET/CT DICOM data.</div>';
+          warnEl.style.display = 'none';
+          const statusEl = document.getElementById('pet-generate-status');
+          const preview = Array.isArray(_helperDebug.helper_files_preview) ? _helperDebug.helper_files_preview.join(', ') : '';
+          const niiPreview = Array.isArray(_helperDebug.helper_nii_files_preview) ? _helperDebug.helper_nii_files_preview.join(', ') : '';
+          statusEl.innerHTML = '<span class="t-err">No PET rows detected. Helper JSON files seen: '
+            + esc(String(_helperDebug.helper_file_count ?? 0))
+            + (preview ? ' [' + esc(preview) + ']' : '')
+            + '. Helper NIfTI files seen: '
+            + esc(String(_helperDebug.helper_nii_file_count ?? 0))
+            + (niiPreview ? ' [' + esc(niiPreview) + ']' : '')
+            + '.</span>';
+          return;
+        }
+        section.style.display = 'none';
+        return;
+      }
+      section.style.display = '';
+
+      const hasDups = tableRows.some(r => r.duplicate_count > 0);
+      warnEl.textContent = hasDups
+        ? '⚠ Some series appear multiple times. One representative row is shown per unique combination of input fields.'
+        : '';
+      warnEl.style.display = hasDups ? '' : 'none';
+
+      const dtypes = ['pet', 'anat', 'fmap'];
+      let html = '<table class="config-table"><thead><tr>'
+        + '<th colspan="6">Input</th>'
+        + '<th colspan="7" class="col-output"><strong>Output</strong></th>'
+        + '</tr><tr>'
+        + '<th>Series number</th><th>Series description</th><th>Protocol name</th><th>Modality</th><th>Image type</th><th>Radiopharmaceutical</th>'
+        + '<th class="col-output"><strong>Data type <span style="color:#f48771">*</span></strong></th>'
+        + '<th>Tracer (trc)</th><th>Reconstruction (rec)</th><th>Run</th><th>Description</th>'
+        + '<th><strong>Suffix <span style="color:#f48771">*</span></strong></th><th>Other suffix</th>'
+        + '</tr></thead><tbody>';
+
+      tableRows.forEach((row, i) => {
+        const s = tableState[i];
+        const dupMark = row.duplicate_count > 0 ? ' ⚠' : '';
+        const dtypeOpts = dtypes.map(v =>
+          '<option value="' + v + '"' + (s.datatype === v ? ' selected' : '') + '>' + v + '</option>'
+        ).join('');
+        const suffixOpts = (SUFFIX_OPTS[s.datatype] || []).map(v =>
+          '<option value="' + v + '"' + (s.suffix === v ? ' selected' : '') + '>' + v + '</option>'
+        ).join('');
+
+        html += '<tr>'
+          + '<td class="input-cell' + (s.selected.series_number ? ' cell-selected' : '') + '" onclick="petBids.toggleCell(' + i + ',\'series_number\')">' + esc(String(row.series_number ?? '')) + '</td>'
+          + '<td class="input-cell' + (s.selected.series_description ? ' cell-selected' : '') + '" onclick="petBids.toggleCell(' + i + ',\'series_description\')">' + esc(row.series_description) + dupMark + '</td>'
+          + '<td class="input-cell' + (s.selected.protocol_name ? ' cell-selected' : '') + '" onclick="petBids.toggleCell(' + i + ',\'protocol_name\')">' + esc(row.protocol_name || '') + '</td>'
+          + '<td class="input-cell' + (s.selected.modality ? ' cell-selected' : '') + '" onclick="petBids.toggleCell(' + i + ',\'modality\')">' + esc(row.modality || '') + '</td>'
+          + '<td class="input-cell' + (s.selected.image_type ? ' cell-selected' : '') + '" onclick="petBids.toggleCell(' + i + ',\'image_type\')">' + esc(row.image_type || '') + '</td>'
+          + '<td class="input-cell' + (s.selected.radiopharmaceutical ? ' cell-selected' : '') + '" onclick="petBids.toggleCell(' + i + ',\'radiopharmaceutical\')">' + esc(row.radiopharmaceutical || '') + '</td>'
+          + '<td class="col-output"><select class="tbl-select" onchange="petBids.updateDatatype(' + i + ',this.value)"><option value="">--</option>' + dtypeOpts + '</select></td>'
+          + '<td><input class="tbl-input" type="text" value="' + escAttr(s.trc) + '" placeholder="(optional)" oninput="petBids.updateState(' + i + ',\'trc\',this.value)"></td>'
+          + '<td><input class="tbl-input" type="text" value="' + escAttr(s.rec) + '" placeholder="(optional)" oninput="petBids.updateState(' + i + ',\'rec\',this.value)"></td>'
+          + '<td><input class="tbl-input" type="text" value="' + escAttr(s.run) + '" placeholder="(optional)" oninput="petBids.updateState(' + i + ',\'run\',this.value)"></td>'
+          + '<td><input class="tbl-input" type="text" value="' + escAttr(s.desc || '') + '" placeholder="(optional)" oninput="petBids.updateState(' + i + ',\'desc\',this.value)"></td>'
+          + '<td><select class="tbl-select" onchange="petBids.updateSuffix(' + i + ',this.value)"><option value="">--</option>' + suffixOpts + '</select></td>'
+          + '<td><input class="tbl-input" type="text" value="' + escAttr(s.other_suffix || '') + '" placeholder="(optional)" oninput="petBids.updateOtherSuffix(' + i + ',this.value)"></td>'
+          + '</tr>';
+      });
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+
+    function toggleCell(rowIdx, field) {
+      tableState[rowIdx].selected[field] = !tableState[rowIdx].selected[field];
+      const tbody = document.querySelector('#pet-config-table-container .config-table tbody');
+      if (!tbody) return;
+      const colIdx = { series_number: 0, series_description: 1, protocol_name: 2, modality: 3, image_type: 4, radiopharmaceutical: 5 }[field] ?? 0;
+      tbody.rows[rowIdx].cells[colIdx].classList.toggle('cell-selected', tableState[rowIdx].selected[field]);
+    }
+
+    function updateState(rowIdx, field, value) { tableState[rowIdx][field] = value; }
+
+    function updateDatatype(rowIdx, value) {
+      tableState[rowIdx].datatype = value;
+      tableState[rowIdx].suffix = '';
+      tableState[rowIdx].other_suffix = '';
+      const tbody = document.querySelector('#pet-config-table-container .config-table tbody');
+      if (!tbody) return;
+      const row = tbody.rows[rowIdx];
+      const opts = (SUFFIX_OPTS[value] || []).map(v => '<option value="' + v + '">' + v + '</option>').join('');
+      const sel = row.cells[11].querySelector('select');
+      if (sel) sel.innerHTML = '<option value="">--</option>' + opts;
+      const other = row.cells[12].querySelector('input');
+      if (other) other.value = '';
+    }
+
+    function updateSuffix(rowIdx, value) {
+      tableState[rowIdx].suffix = value;
+      tableState[rowIdx].other_suffix = '';
+      const tbody = document.querySelector('#pet-config-table-container .config-table tbody');
+      if (!tbody) return;
+      const other = tbody.rows[rowIdx].cells[12].querySelector('input');
+      if (other) other.value = '';
+    }
+
+    function updateOtherSuffix(rowIdx, value) {
+      tableState[rowIdx].other_suffix = value;
+      if (value.trim()) {
+        tableState[rowIdx].suffix = '';
+        const tbody = document.querySelector('#pet-config-table-container .config-table tbody');
+        if (!tbody) return;
+        const sel = tbody.rows[rowIdx].cells[11].querySelector('select');
+        if (sel) sel.value = '';
+      }
+    }
+
+    function _buildDescriptions() {
+      const descriptions = [];
+      tableRows.forEach((row, i) => {
+        const s = tableState[i];
+        if (!(s.selected.series_number || s.selected.series_description || s.selected.protocol_name || s.selected.modality || s.selected.image_type || s.selected.radiopharmaceutical)) return;
+        const effectiveSuffix = (s.other_suffix || '').trim() || s.suffix;
+        if (!s.datatype || !effectiveSuffix) return;
+
+        const d = { datatype: s.datatype, suffix: effectiveSuffix };
+        const ce = [];
+        if (s.trc.trim()) ce.push('trc-' + s.trc.trim());
+        if (s.rec.trim()) ce.push('rec-' + s.rec.trim());
+        if (s.run.trim()) ce.push('run-' + s.run.trim());
+        if (s.desc.trim()) ce.push('desc-' + s.desc.trim());
+        if (ce.length) d.custom_entities = ce;
+
+        d.criteria = {};
+        if (s.selected.series_description) d.criteria.SeriesDescription = row.series_description;
+        if (s.selected.series_number) d.criteria.SeriesNumber = row.series_number;
+        if (s.selected.protocol_name) d.criteria.ProtocolName = row.protocol_name;
+        if (s.selected.modality) d.criteria.Modality = row.modality;
+        if (s.selected.image_type) d.criteria.ImageType = (row.image_type || '').split(',').map(v => v.trim()).filter(Boolean);
+        if (s.selected.radiopharmaceutical) d.criteria.Radiopharmaceutical = row.radiopharmaceutical;
+
+        descriptions.push(d);
+      });
+      return descriptions;
+    }
+
+    async function _doSaveConfig(payload) {
+      const resp = await fetch(_addToken('/pet-save-bids-config'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      return !!(await resp.json()).ok;
+    }
+
+    async function generateConfig() {
+      const statusEl = document.getElementById('pet-generate-status');
+      const descriptions = _buildDescriptions();
+      if (!descriptions.length) {
+        statusEl.innerHTML = '<span class="t-err">No rows ready: each needs at least one selected input cell, a data type, and a suffix.</span>';
+        return;
+      }
+      try {
+        const check = await fetch(_addToken('/pet-get-bids-config'));
+        if (check.ok) {
+          const cd = await check.json();
+          if (cd.config !== null) {
+            const confirmed = confirm('dcm2bids_config_pet.json already exists.\n\nOverwrite it with '
+              + descriptions.length + ' description' + (descriptions.length !== 1 ? 's' : '') + '?');
+            if (!confirmed) { statusEl.textContent = ''; return; }
+          }
+        }
+      } catch { /* fall through */ }
+      try {
+        const ok = await _doSaveConfig({ descriptions });
+        statusEl.innerHTML = ok
+          ? '<span class="t-ok">✓ Saved dcm2bids_config_pet.json (' + descriptions.length + ' description' + (descriptions.length !== 1 ? 's' : '') + ')</span>'
+          : '<span class="t-err">✗ Server error saving config.</span>';
+      } catch {
+        statusEl.innerHTML = '<span class="t-err">✗ Failed to reach server.</span>';
+      }
+    }
+
+    async function appendToConfig() {
+      const statusEl = document.getElementById('pet-generate-status');
+      const newDescs = _buildDescriptions();
+      if (!newDescs.length) {
+        statusEl.innerHTML = '<span class="t-err">No rows ready: each needs at least one selected input cell, a data type, and a suffix.</span>';
+        return;
+      }
+      let existing = [];
+      try {
+        const resp = await fetch(_addToken('/pet-get-bids-config'));
+        if (resp.ok) {
+          const d = await resp.json();
+          if (d.config && Array.isArray(d.config.descriptions)) existing = d.config.descriptions;
+        }
+      } catch { /* start fresh */ }
+      const merged = existing.concat(newDescs);
+      try {
+        const ok = await _doSaveConfig({ descriptions: merged });
+        statusEl.innerHTML = ok
+          ? '<span class="t-ok">✓ Appended ' + newDescs.length + ' description' + (newDescs.length !== 1 ? 's' : '') + ' (total: ' + merged.length + ')</span>'
+          : '<span class="t-err">✗ Server error saving config.</span>';
+      } catch {
+        statusEl.innerHTML = '<span class="t-err">✗ Failed to reach server.</span>';
+      }
+    }
+
+    async function loadConfigToTable() {
+      const statusEl = document.getElementById('pet-generate-status');
+      try {
+        const resp = await fetch(_addToken('/pet-get-bids-config'));
+        const data = await resp.json();
+        if (!data.config) {
+          statusEl.innerHTML = '<span class="t-err">No config file found.</span>';
+          return;
+        }
+        tableState = tableRows.map(() => ({
+          selected: { series_number: false, series_description: false, protocol_name: false, modality: false, image_type: false, radiopharmaceutical: false },
+          datatype: 'pet', trc: '', rec: '', run: '', desc: '', suffix: 'pet', other_suffix: ''
+        }));
+        _prePopulateFromConfig(data.config);
+        renderConfigTable();
+        statusEl.innerHTML = '<span class="t-ok">✓ Config loaded into table</span>';
+      } catch {
+        statusEl.innerHTML = '<span class="t-err">✗ Failed to load config.</span>';
+      }
+    }
+
+    function validateEditorJson() {
+      const ta = document.getElementById('pet-config-editor-text');
+      const warn = document.getElementById('pet-editor-json-warn');
+      if (!ta.value.trim()) {
+        warn.style.display = 'none';
+        return;
+      }
+      try {
+        JSON.parse(ta.value);
+        warn.style.display = 'none';
+      } catch (e) {
+        warn.textContent = '⚠ Invalid JSON: ' + e.message;
+        warn.style.display = '';
+      }
+    }
+
+    function updateLineNumbers() {
+      const ta = document.getElementById('pet-config-editor-text');
+      const gutter = document.getElementById('pet-editor-lines');
+      const count = ta.value.split('\n').length;
+      gutter.textContent = Array.from({ length: count }, (_, i) => i + 1).join('\n');
+    }
+
+    function syncLineScroll() {
+      const ta = document.getElementById('pet-config-editor-text');
+      const gutter = document.getElementById('pet-editor-lines');
+      gutter.scrollTop = ta.scrollTop;
+    }
+
+    async function loadConfigEditor() {
+      const ta = document.getElementById('pet-config-editor-text');
+      const status = document.getElementById('pet-editor-status');
+      try {
+        const resp = await fetch(_addToken('/pet-get-bids-config'));
+        const data = await resp.json();
+        ta.value = data.config ? JSON.stringify(data.config, null, 4) : '';
+        status.textContent = '';
+        updateLineNumbers();
+      } catch {
+        status.innerHTML = '<span class="t-err">Failed to load config.</span>';
+      }
+    }
+
+    async function saveConfigEditor() {
+      const ta = document.getElementById('pet-config-editor-text');
+      const status = document.getElementById('pet-editor-status');
+      let parsed;
+      try {
+        parsed = JSON.parse(ta.value);
+      } catch (e) {
+        status.innerHTML = '<span class="t-err">✗ Invalid JSON: ' + esc(e.message) + '</span>';
+        return;
+      }
+      try {
+        const resp = await fetch(_addToken('/pet-save-bids-config'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(parsed),
+        });
+        const data = await resp.json();
+        status.innerHTML = data.ok
+          ? '<span class="t-ok">✓ Saved</span>'
+          : '<span class="t-err">✗ Server error.</span>';
+      } catch {
+        status.innerHTML = '<span class="t-err">✗ Failed to reach server.</span>';
+      }
     }
 
     function renderCsvFileList(paths) {
@@ -364,19 +912,17 @@
           activeSource = null;
           btn.disabled = false;
           btn.textContent = 'Show file overview';
-          const ok = msg.returncode === 0;
-          out.innerHTML +=
-            '<span class="' + (ok ? 't-ok' : 't-err') + '">' +
-            esc(ok ? '\n✓ Done.' : '\n✗ Exited with code ' + msg.returncode + '.') +
-            '</span>';
-          out.scrollTop = out.scrollHeight;
+          return;
         } else if (msg.file && msg.open_url) {
           out.innerHTML +=
             '<a href="' + escAttr(msg.open_url) + '" target="_blank" rel="noopener noreferrer">' +
             esc(msg.file) +
-            '</a> (' + esc(msg.size_text || 'size unknown') + ')\n';
+            '</a>\n';
           out.scrollTop = out.scrollHeight;
         } else {
+          if (msg.line && msg.line.startsWith('Overview for:')) {
+            return;
+          }
           out.innerHTML += esc(msg.line) + '\n';
           out.scrollTop = out.scrollHeight;
         }
@@ -387,6 +933,57 @@
         activeSource = null;
         btn.disabled = false;
         btn.textContent = 'Show file overview';
+        out.innerHTML += '<span class="t-err">\nConnection error.</span>';
+      };
+    }
+
+    function runRawDataOverview() {
+      const btn = document.getElementById('raw-btn');
+      const out = document.getElementById('raw-output');
+      const relPath = document.getElementById('raw-path').value.trim();
+
+      if (!relPath) {
+        out.innerHTML = '<span class="t-err">Please enter a path.</span>';
+        return;
+      }
+
+      if (activeSource) { activeSource.close(); activeSource = null; }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Analyzing…';
+      out.innerHTML = '';
+
+      const force = document.getElementById('pet-force-check').checked ? '1' : '0';
+      activeSource = new EventSource(_addToken('/run-dcm2bids-helper-pet?path=' + encodeURIComponent(relPath) + '&force=' + force));
+
+      activeSource.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.error === 'invalid_path') {
+          activeSource.close(); activeSource = null;
+          btn.disabled = false;
+          btn.textContent = 'Analyze DICOM fields';
+          out.innerHTML = '<span class="t-err">Invalid path.</span>';
+          return;
+        }
+        if (msg.done) {
+          activeSource.close(); activeSource = null;
+          btn.disabled = false;
+          btn.textContent = 'Analyze DICOM fields';
+          const ok = msg.returncode === 0;
+          _petHelperRunCompleted = true;
+          out.innerHTML += '<span class="' + (ok ? 't-ok' : 't-err') + '">' + esc(ok ? '\n✓ Done.' : '\n✗ Exited with code ' + msg.returncode + '.') + '</span>';
+          out.scrollTop = out.scrollHeight;
+          loadHelperSummary(false);
+        } else {
+          out.innerHTML += esc(msg.line) + '\n';
+          out.scrollTop = out.scrollHeight;
+        }
+      };
+
+      activeSource.onerror = () => {
+        activeSource.close(); activeSource = null;
+        btn.disabled = false;
+        btn.textContent = 'Analyze DICOM fields';
         out.innerHTML += '<span class="t-err">\nConnection error.</span>';
       };
     }
@@ -560,6 +1157,15 @@
     return {
       switchSubTab,
       runOverview,
+      runRawDataOverview,
+      toggleCell,
+      updateState,
+      updateDatatype,
+      updateSuffix,
+      updateOtherSuffix,
+      generateConfig,
+      appendToConfig,
+      loadConfigToTable,
       loadCsvFile,
       initializeTargetFromSource,
       loadTargetFile,
@@ -573,9 +1179,25 @@
       mergeFileSelected,
       executeMerge,
       refreshEditability,
+      onTabSwitch(_name) {
+        const rawPane = document.getElementById('pet-tab-raw');
+        const editorPane = document.getElementById('pet-tab-editor');
+        if (rawPane && rawPane.classList.contains('active')) {
+          loadHelperSummary(true);
+        }
+        if (editorPane && editorPane.classList.contains('active')) {
+          loadConfigEditor();
+        }
+      },
+      validateEditorJson,
+      updateLineNumbers,
+      syncLineScroll,
+      loadConfigEditor,
+      saveConfigEditor,
       init: (token) => {
         _token = token;
         initializeAndLoad();
+        loadHelperSummary(true);
       },
     };
   })();

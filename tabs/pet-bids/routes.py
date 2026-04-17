@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """PET-BIDS tab: route registration and request handlers."""
 import csv
+import importlib.util
 import json
 import mimetypes
 import os
 import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
 from urllib.parse import quote, unquote
 
 TAB_METADATA = {
@@ -14,11 +19,23 @@ TAB_METADATA = {
 }
 
 _TAB_DIR = os.path.dirname(os.path.abspath(__file__))
+
+_CFG_PATH = os.path.join(_TAB_DIR, "config_builder.py")
+_CFG_SPEC = importlib.util.spec_from_file_location("pet_bids_config_builder", _CFG_PATH)
+config_builder = importlib.util.module_from_spec(_CFG_SPEC)
+_CFG_SPEC.loader.exec_module(config_builder)
+_LOCAL_CONFIG_FILE = os.path.realpath(os.path.join(_TAB_DIR, "..", "..", "dcm2bids_config_pet.json"))
+if os.path.realpath(getattr(config_builder, "CONFIG_FILE", _LOCAL_CONFIG_FILE)) != _LOCAL_CONFIG_FILE:
+    config_builder.CONFIG_FILE = _LOCAL_CONFIG_FILE
+
 _BIDS_UTILS_DIR = os.path.dirname(os.path.dirname(_TAB_DIR))
-PROJECT_ROOT = os.path.dirname(_BIDS_UTILS_DIR)
+PROJECT_ROOT = os.path.realpath(os.path.join(_BIDS_UTILS_DIR, "..", ".."))
+_RAW_PET_HELPER_DIR = os.path.join(PROJECT_ROOT, "raw", "bmic")
+_OUTPUT_DIR = os.path.join(_TAB_DIR, "dcm2bids_helper")
 
 _CSV_RAW_PET_DIR = os.path.join(PROJECT_ROOT, "BIDS_pet")
 _DEFAULT_PET_DATA_DIR = os.path.join(PROJECT_ROOT, "BIDS")
+_DEFAULT_PETPREP_HTML_DIR = os.path.join(PROJECT_ROOT, "BIDS", "derivatives", "petprep")
 
 
 def _resolve_config_path(value, default_path):
@@ -45,6 +62,32 @@ _PET_DERIVATIVES_DIR_CANDIDATES = [
 ] or [
     os.path.join(_RAW_PET_DIR, "derivatives"),
 ]
+
+
+def _find_executable(name):
+    import shutil
+
+    path = shutil.which(name)
+    if path:
+        return path
+
+    candidate = os.path.join(os.path.dirname(os.path.realpath(sys.executable)), name)
+    if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+        return candidate
+
+    home = os.path.expanduser("~")
+    for prefix in [
+        "/opt/anaconda3", "/opt/miniconda3", "/opt/conda",
+        os.path.join(home, "anaconda3"), os.path.join(home, "miniconda3"),
+        os.path.join(home, "mambaforge"), os.path.join(home, "miniforge3"),
+    ]:
+        c = os.path.join(prefix, "bin", name)
+        if os.path.isfile(c) and os.access(c, os.X_OK):
+            return c
+    return None
+
+
+_DCM2BIDS_HELPER = _find_executable("dcm2bids_helper")
 
 
 def _normalize_subject(value):
@@ -157,24 +200,30 @@ def _resolve_top_level_derivatives_csv_path(rel_path):
 
 
 def _resolve_project_path(rel_path):
-    rel_path = rel_path.lstrip("/")
-    full_path = os.path.realpath(os.path.join(PROJECT_ROOT, rel_path))
     allowed = os.path.realpath(PROJECT_ROOT)
+    rel_path = str(rel_path or "").strip()
+    if os.path.isabs(rel_path):
+        full_path = os.path.realpath(rel_path)
+    else:
+        full_path = os.path.realpath(os.path.join(PROJECT_ROOT, rel_path.lstrip("/")))
     if not (full_path == allowed or full_path.startswith(allowed + os.sep)):
         return None
     return full_path
 
 
 def _get_default_raw_pet_path():
-    if not os.path.isdir(_RAW_PET_DIR):
+    if not os.path.isdir(_RAW_PET_HELPER_DIR):
         return None, "No PET data found in path"
 
-    entries = sorted(e for e in os.listdir(_RAW_PET_DIR) if os.path.isdir(os.path.join(_RAW_PET_DIR, e)))
+    entries = sorted(
+        e for e in os.listdir(_RAW_PET_HELPER_DIR)
+        if os.path.isdir(os.path.join(_RAW_PET_HELPER_DIR, e))
+    )
     if not entries:
         return None, "No PET data found in path"
 
     first = entries[0]
-    first_abs = os.path.join(_RAW_PET_DIR, first)
+    first_abs = os.path.join(_RAW_PET_HELPER_DIR, first)
 
     if re.match(r"^\d+_\d{8}_\d{6}$", first):
         return os.path.relpath(first_abs, PROJECT_ROOT), None
@@ -189,6 +238,78 @@ def _get_default_raw_pet_path():
             return os.path.relpath(ses_abs, PROJECT_ROOT), None
 
     return os.path.relpath(first_abs, PROJECT_ROOT), None
+
+
+def _get_default_petprep_html_path():
+    petprep_dir = os.path.realpath(_DEFAULT_PETPREP_HTML_DIR)
+    if os.path.isdir(petprep_dir):
+        return os.path.relpath(petprep_dir, PROJECT_ROOT), None
+    return os.path.relpath(petprep_dir, PROJECT_ROOT), "PETPrep derivatives folder not found"
+
+
+def _handle_run_dcm2bids_helper_pet(h, params):
+    rel_path = params.get("path", [None])[0]
+    if not rel_path:
+        h.send_error(400, "Missing path parameter")
+        return
+
+    full_path = _resolve_project_path(rel_path)
+    if not full_path:
+        h.send_error(403, "Path outside project root")
+        return
+
+    pet_root = os.path.realpath(_RAW_PET_HELPER_DIR)
+    if not (full_path == pet_root or full_path.startswith(pet_root + os.sep)):
+        h.send_error(403, "Path must be inside raw/bmic for PET helper")
+        return
+
+    h.send_response(200)
+    h.send_header("Content-Type", "text/event-stream")
+    h.send_header("Cache-Control", "no-cache")
+    h.send_header("Connection", "keep-alive")
+    h.end_headers()
+
+    if not os.path.isdir(full_path):
+        _emit_sse(h, {"error": "invalid_path"})
+        return
+
+    if not _DCM2BIDS_HELPER:
+        _emit_sse(h, {"line": "Error: dcm2bids_helper not found. Is it installed in this Python environment?"})
+        _emit_sse(h, {"done": True, "returncode": 1})
+        return
+
+    # dcm2bids >= 3.x does not rerun helper conversion if tmp_dcm2bids exists
+    # unless --force_dcm2bids is supplied. We keep outputs by default and force
+    # rerun via CLI, while optional UI force also clears temp output directory.
+    force = params.get("force", ["0"])[0] == "1"
+    tmp_dir = os.path.join(_OUTPUT_DIR, "tmp_dcm2bids")
+    if force and os.path.isdir(tmp_dir):
+        try:
+            shutil.rmtree(tmp_dir)
+        except OSError as exc:
+            _emit_sse(h, {"line": f"Warning: could not clear previous helper temp directory: {exc}"})
+
+    cmd = [_DCM2BIDS_HELPER, "-d", full_path, "-o", _OUTPUT_DIR, "--force_dcm2bids"]
+
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        try:
+            for line in proc.stdout:
+                _emit_sse(h, {"line": line.rstrip("\n")})
+            proc.wait(timeout=300)
+            rc = proc.returncode
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            _emit_sse(h, {"line": "Error: Process timed out (5 minutes)"})
+            rc = 1
+    except FileNotFoundError:
+        _emit_sse(h, {"line": f"Error: could not launch {_DCM2BIDS_HELPER}"})
+        rc = 1
+    except Exception as exc:
+        _emit_sse(h, {"line": f"Error: {exc}"})
+        rc = 1
+
+    _emit_sse(h, {"done": True, "returncode": rc})
 
 
 def _find_derivatives_csv_files(max_count=200):
@@ -273,25 +394,24 @@ def _get_csv_browser_config():
 
 
 def _iter_raw_pet_overview_lines(base_dir):
-    files = sorted(name for name in os.listdir(base_dir) if os.path.isfile(os.path.join(base_dir, name)))
-
     found_any = False
-    for filename in files:
-        if not filename.lower().endswith(".html"):
-            continue
+    for root, _, files in os.walk(base_dir):
+        for filename in sorted(files):
+            if not filename.lower().endswith(".html"):
+                continue
 
-        found_any = True
-        file_path = os.path.join(base_dir, filename)
-        rel_path = os.path.relpath(file_path, PROJECT_ROOT)
-        try:
-            size = os.path.getsize(file_path)
-        except OSError:
-            size = -1
-        yield {
-            "file": filename,
-            "rel_path": rel_path,
-            "size": size,
-        }
+            found_any = True
+            file_path = os.path.join(root, filename)
+            rel_path = os.path.relpath(file_path, PROJECT_ROOT)
+            try:
+                size = os.path.getsize(file_path)
+            except OSError:
+                size = -1
+            yield {
+                "file": filename,
+                "rel_path": rel_path,
+                "size": size,
+            }
 
     if not found_any:
         yield "No .html files found."
@@ -302,21 +422,97 @@ def _emit_sse(h, obj):
     h.wfile.flush()
 
 
+def _rewrite_html_asset_links(html_text, rel_html_path, auth_token):
+    """Rewrite relative src/href links so assets resolve via /open-file."""
+    rel_dir = os.path.dirname(rel_html_path)
+
+    def _replace(match):
+        attr = match.group(1)
+        quote_char = match.group(2)
+        url = (match.group(3) or "").strip()
+        lower = url.lower()
+
+        if (
+            not url
+            or lower.startswith(("http://", "https://", "data:", "javascript:", "mailto:"))
+            or url.startswith(("#", "/"))
+        ):
+            return match.group(0)
+
+        target_rel = os.path.normpath(os.path.join(rel_dir, url)).replace("\\", "/")
+        target_full = _resolve_project_path(target_rel)
+        if not target_full or not os.path.isfile(target_full):
+            return match.group(0)
+
+        open_rel = quote(target_rel.lstrip("/"), safe="/")
+        rewritten = f"/open-file?path={open_rel}&token={quote(auth_token)}"
+        return f"{attr}={quote_char}{rewritten}{quote_char}"
+
+    return re.sub(r'(src|href)\s*=\s*(["\'])([^"\']+)\2', _replace, html_text, flags=re.IGNORECASE)
+
+
 def _handle_get_config(h, params):
     default_path, warning = _get_default_raw_pet_path()
+    html_default_path, html_warning = _get_default_petprep_html_path()
     h._send_json({
         "project_root": PROJECT_ROOT,
         "default_path": default_path,
         "warning": warning,
+        "html_default_path": html_default_path,
+        "html_warning": html_warning,
     })
 
 
+def _handle_get_helper_summary(h, params):
+    rows = config_builder.read_helper_jsons()
+    helper_dir = os.path.join(_OUTPUT_DIR, "tmp_dcm2bids", "helper")
+    helper_files = []
+    helper_nii_files = []
+    if os.path.isdir(helper_dir):
+        try:
+            helper_files = sorted(f for f in os.listdir(helper_dir) if f.endswith('.json'))
+            helper_nii_files = sorted(f for f in os.listdir(helper_dir) if f.endswith('.nii.gz'))
+        except OSError:
+            helper_files = []
+            helper_nii_files = []
+    h._send_json({
+        "rows": rows,
+        "debug": {
+            "helper_dir": helper_dir,
+            "helper_file_count": len(helper_files),
+            "helper_files_preview": helper_files[:20],
+            "helper_nii_file_count": len(helper_nii_files),
+            "helper_nii_files_preview": helper_nii_files[:20],
+        },
+    })
+
+
+def _handle_get_bids_config(h, params):
+    cfg = config_builder.load_config()
+    h._send_json({"config": cfg})
+
+
+def _handle_save_bids_config(h, body):
+    if not isinstance(body, dict) or "descriptions" not in body:
+        h.send_error(400, "Invalid config: missing 'descriptions'")
+        return
+    try:
+        config_builder.save_config(body)
+        h._send_json({"ok": True})
+    except Exception as exc:
+        h.send_error(500, f"Failed to save config: {exc}")
+
+
 def _handle_raw_pet_overview(h, params):
-    rel_path = params.get("path", [None])[0] or os.path.relpath(_RAW_PET_DIR, PROJECT_ROOT)
+    rel_path = params.get("path", [None])[0] or os.path.relpath(_DEFAULT_PETPREP_HTML_DIR, PROJECT_ROOT)
+    petprep_root = os.path.realpath(_DEFAULT_PETPREP_HTML_DIR)
 
     full_path = _resolve_project_path(rel_path)
     if not full_path:
         h.send_error(403, "Path outside project root")
+        return
+    if not (full_path == petprep_root or full_path.startswith(petprep_root + os.sep)):
+        h.send_error(403, "Path must be inside BIDS/derivatives/petprep")
         return
 
     h.send_response(200)
@@ -329,7 +525,6 @@ def _handle_raw_pet_overview(h, params):
         _emit_sse(h, {"error": "invalid_path"})
         return
 
-    _emit_sse(h, {"line": f"Overview for: {full_path}"})
     try:
         for item in _iter_raw_pet_overview_lines(full_path):
             if isinstance(item, str):
@@ -392,16 +587,23 @@ def _handle_open_file(h, params):
         h.send_error(404, "File not found")
         return
 
+    content_type, _ = mimetypes.guess_type(full_path)
+    if not content_type:
+        content_type = "application/octet-stream"
+
     try:
-        with open(full_path, "rb") as f:
-            body = f.read()
+        if content_type == "text/html":
+            with open(full_path, "r", encoding="utf-8") as f:
+                html_text = f.read()
+            html_text = _rewrite_html_asset_links(html_text, rel_path, h.server._auth_token)
+            body = html_text.encode("utf-8")
+        else:
+            with open(full_path, "rb") as f:
+                body = f.read()
     except OSError:
         h.send_error(500, "Failed to read file")
         return
 
-    content_type, _ = mimetypes.guess_type(full_path)
-    if not content_type:
-        content_type = "application/octet-stream"
     if content_type.startswith("text/"):
         content_type += "; charset=utf-8"
 
@@ -824,7 +1026,10 @@ def _post_wrapper(fn):
 
 
 def register(get_routes, post_routes):
-    get_routes["/get-config"] = _handle_get_config
+    get_routes["/pet-get-config"] = _handle_get_config
+    get_routes["/pet-get-helper-summary"] = _handle_get_helper_summary
+    get_routes["/pet-get-bids-config"] = _handle_get_bids_config
+    get_routes["/run-dcm2bids-helper-pet"] = _handle_run_dcm2bids_helper_pet
     get_routes["/raw-pet-overview"] = _handle_raw_pet_overview
     get_routes["/open-html"] = _handle_open_html
     get_routes["/open-file"] = _handle_open_file
@@ -834,6 +1039,7 @@ def register(get_routes, post_routes):
     get_routes["/load-target-file"] = _handle_load_target_file
 
     post_routes["/update-csv-cell"] = _post_wrapper(_post_update_csv_cell)
+    post_routes["/pet-save-bids-config"] = _post_wrapper(_handle_save_bids_config)
     post_routes["/save-target-file"] = _post_wrapper(_post_save_target_file)
     post_routes["/reset-target-file"] = _post_wrapper(_post_reset_target_file)
     post_routes["/merge-completed-sessions"] = _post_wrapper(_post_merge_completed_sessions)

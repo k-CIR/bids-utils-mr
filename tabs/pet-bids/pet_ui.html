@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BIDS Utils PET</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body {
+      font-family: monospace;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 2rem;
+      margin: 0;
+    }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #3c3c3c;
+      margin-bottom: 1.5rem;
+    }
+    .tab-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      border-bottom: none;
+      color: #888;
+      cursor: pointer;
+      font-family: monospace;
+      font-size: 0.95rem;
+      padding: 0.45rem 1.1rem;
+      margin-bottom: -1px;
+      border-radius: 3px 3px 0 0;
+    }
+    .tab-btn:hover:not(.active) { color: #ccc; }
+    .tab-btn.active {
+      color: #d4d4d4;
+      background: #252526;
+      border-color: #3c3c3c;
+      border-bottom-color: #252526;
+    }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    /* ── Path row ── */
+    .path-row {
+      display: flex;
+      align-items: center;
+      background: #252526;
+      border: 1px solid #3c3c3c;
+      border-radius: 3px;
+      padding: 0.35rem 0.7rem;
+      margin-bottom: 0.9rem;
+    }
+    .path-static {
+      color: #555;
+      white-space: nowrap;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .path-input {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #d4d4d4;
+      font-family: monospace;
+      font-size: 0.95rem;
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* ── Text / warnings ── */
+    .description {
+      color: #9e9e9e;
+      font-size: 0.88rem;
+      line-height: 1.6;
+      margin: 0 0 1rem;
+    }
+    .warn {
+      color: #f48771;
+      font-size: 0.88rem;
+      margin-bottom: 0.8rem;
+    }
+
+    /* ── Button ── */
+    .btn {
+      background: #0e639c;
+      color: #fff;
+      border: none;
+      padding: 0.45rem 1.1rem;
+      font-size: 0.95rem;
+      font-family: monospace;
+      cursor: pointer;
+      border-radius: 3px;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .btn:hover { background: #1177bb; }
+    .btn:disabled { background: #555; cursor: not-allowed; }
+
+    /* ── Spinner ── */
+    .spinner {
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(255, 255, 255, 0.25);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Terminal output ── */
+    #overview-output {
+      margin-top: 1.2rem;
+      background: #0d0d0d;
+      border: 1px solid #3c3c3c;
+      border-radius: 4px;
+      padding: 0.8rem 1rem;
+      white-space: pre-wrap;
+      min-height: 5rem;
+      max-height: 440px;
+      overflow-y: auto;
+      line-height: 1.55;
+      font-size: 0.87rem;
+      color: #c8c8c8;
+    }
+    .t-ok  { color: #4ec9b0; }
+    .t-err { color: #f48771; }
+
+    .list {
+      margin: 0.6rem 0 1rem;
+      padding-left: 1.1rem;
+      color: #9e9e9e;
+      font-size: 0.85rem;
+      max-height: 8rem;
+      overflow-y: auto;
+    }
+
+    .csv-table-wrap {
+      margin-top: 1rem;
+      border: 1px solid #3c3c3c;
+      border-radius: 4px;
+      overflow: auto;
+      min-height: 22rem;
+      max-height: 75vh;
+      background: #121212;
+    }
+
+    .csv-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+
+    .csv-table th,
+    .csv-table td {
+      border-bottom: 1px solid #2a2a2a;
+      border-right: 1px solid #2a2a2a;
+      padding: 0.4rem 0.5rem;
+      white-space: nowrap;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .csv-table th {
+      position: sticky;
+      top: 0;
+      background: #202020;
+      color: #e0e0e0;
+      z-index: 1;
+    }
+
+    .csv-meta {
+      color: #9e9e9e;
+      font-size: 0.85rem;
+      margin-top: 0.6rem;
+    }
+
+    .controls-row {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.8rem;
+    }
+
+    .status-btn {
+      border: 1px solid #3c3c3c;
+      border-radius: 3px;
+      background: #2a2a2a;
+      color: #d4d4d4;
+      font-size: 0.78rem;
+      font-family: monospace;
+      padding: 0.1rem 0.45rem;
+      cursor: pointer;
+    }
+    .status-btn:hover { background: #373737; }
+    .status-not-done { color: #f48771; }
+    .status-done { color: #4ec9b0; }
+    .status-approved { color: #9cdcfe; }
+
+    .status-select {
+      width: 100%;
+      min-width: 8.5rem;
+      border: 1px solid #3c3c3c;
+      border-radius: 3px;
+      font-size: 0.78rem;
+      font-family: monospace;
+      padding: 0.15rem 0.35rem;
+      color: #d4d4d4;
+      outline: none;
+      background: #2a2a2a;
+      cursor: pointer;
+    }
+    .status-select[data-locked="true"] {
+      opacity: 0.5;
+    }
+    .status-select-blank {
+      background: #2a2a2a;
+      color: #d4d4d4;
+    }
+    .status-select-to-do {
+      background: #43285a;
+      color: #dfb9ff;
+    }
+    .status-select-done {
+      background: #1f3d33;
+      color: #8ce2cc;
+    }
+    .status-select-approved {
+      background: #233b4f;
+      color: #9cdcfe;
+    }
+    .status-select-denied {
+      background: #5a2424;
+      color: #ffb3b3;
+    }
+
+  </style>
+</head>
+<body>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-target="config" onclick="switchTab('config')">PET overview</button>
+    <button class="tab-btn"        data-target="bids"   onclick="switchTab('bids')">PET QC overview</button>
+  </div>
+
+  <!-- ── PET overview ── -->
+  <div id="tab-config" class="tab-pane active">
+    <p class="description">
+      Show a readable overview of all folders and files in the PET raw data directory.
+      A default path is loaded automatically, and you can change it if needed.
+    </p>
+
+    <div id="path-warn" class="warn" style="display:none;"></div>
+
+    <div class="path-row">
+      <span class="path-static" id="path-static">/data/projects/…</span>
+      <span class="path-static">/</span>
+      <input id="overview-path" class="path-input" type="text"
+             spellcheck="false" placeholder="BIDS_pet/..." />
+    </div>
+
+    <button class="btn" id="overview-btn" onclick="runOverview()">Show file overview</button>
+
+    <div id="overview-output">Output will appear here…</div>
+  </div>
+
+  <!-- ── PET QC Overview ── -->
+  <div id="tab-bids" class="tab-pane">
+    <p class="description">
+      Browse a CSV under derivatives that tracks data collection, BIDSification,
+      and quality-control completion per subject/session.
+    </p>
+
+    <div id="csv-warn" class="warn" style="display:none;"></div>
+
+    <div class="path-row">
+      <span class="path-static" id="csv-path-static">/data/projects/…</span>
+      <span class="path-static">/</span>
+      <input id="csv-path" class="path-input" type="text"
+             spellcheck="false" placeholder="BIDS_pet/derivatives/your_file.csv" />
+    </div>
+
+    <div class="controls-row">
+      <button class="btn" id="csv-load-btn" onclick="loadCsvFile()">Load CSV</button>
+      <button class="btn" id="init-target-btn" onclick="initializeTargetFromSource()">Initialize target from source</button>
+      <input id="csv-columns" class="path-input" type="text"
+             spellcheck="false" placeholder="Columns (comma-separated, optional)" />
+      <label style="display:flex; align-items:center; gap:0.35rem; color:#c8c8c8; font-size:0.85rem;">
+        <input type="checkbox" id="read-only-toggle" checked onchange="refreshEditability()" />
+        Read-only
+      </label>
+    </div>
+
+    <ul id="csv-file-list" class="list"></ul>
+
+    <div id="target-file-section" style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #3c3c3c;">
+      <p class="description" style="margin-bottom: 0.6rem;">
+        <strong>Target file tracking</strong> — Define where to save progress and which columns track status.
+      </p>
+      <div class="path-row">
+        <span class="path-static" id="target-path-static">/data/projects/…</span>
+        <span class="path-static">/</span>
+        <input id="target-file-path" class="path-input" type="text"
+               spellcheck="false" placeholder="BIDS_pet/derivatives/progress.csv" />
+      </div>
+      <div class="controls-row">
+        <button class="btn" id="load-target-btn" onclick="loadTargetFile()">Load target</button>
+        <button class="btn" id="save-target-btn" onclick="saveTargetFile()">Create/Save target</button>
+        <button class="btn" id="reset-target-btn" style="background:#8b2d2d;" onclick="showResetDialog()">Restart progress CSV</button>
+        <button class="btn" id="merge-completed-btn" onclick="showMergeDialog()">Add rows from completed sessions</button>
+      </div>
+      <label for="status-column-names" style="display:block; color:#9e9e9e; font-size:0.82rem; margin:0.4rem 0 0.3rem;">
+        Status columns (comma-separated)
+      </label>
+      <textarea id="status-column-names" class="path-input"
+                spellcheck="false"
+                style="width:100%; min-height:3rem; resize:vertical; white-space:pre-wrap;"
+                placeholder="BIDS, PETPrep ran, QC motion correction, QC coregistration, QC MRI delineation, QC Freesurfer"></textarea>
+      <ul id="target-file-list" class="list"></ul>
+    </div>
+
+    <div id="csv-meta" class="csv-meta"></div>
+    <div id="csv-table-wrap" class="csv-table-wrap" style="display:none;">
+      <table class="csv-table" id="csv-table"></table>
+    </div>
+
+    <!-- Merge dialog overlay -->
+    <div id="merge-dialog-overlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:999;"></div>
+    <div id="merge-dialog" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#252526; border:1px solid #3c3c3c; border-radius:4px; padding:1.5rem; z-index:1000; min-width:400px; max-width:600px; box-shadow:0 0 20px rgba(0,0,0,0.8);">
+      <h3 style="margin:0 0 1rem; color:#d4d4d4; font-size:1rem;">Add rows from completed sessions</h3>
+      <p style="color:#9e9e9e; font-size:0.88rem; margin-bottom:1rem;">
+        Select a completed sessions CSV file to append its rows to the current target.
+      </p>
+      <label for="merge-file-select" style="display:block; color:#9e9e9e; font-size:0.82rem; margin:0 0 0.4rem;">
+        Available files:
+      </label>
+      <select id="merge-file-select" class="status-select" style="width:100%; margin-bottom:0.8rem;" onchange="mergeFileSelected()">
+        <option value="">-- Select a file --</option>
+      </select>
+      <label for="merge-file-path" style="display:block; color:#9e9e9e; font-size:0.82rem; margin:0 0 0.3rem;">
+        Or enter path manually:
+      </label>
+      <div class="path-row" style="margin-bottom:0.8rem;">
+        <span class="path-static">File:</span>
+        <input id="merge-file-path" class="path-input" type="text" spellcheck="false" placeholder="BIDS_pet/derivatives/completed.csv" />
+      </div>
+      <div style="display:flex; gap:0.6rem; justify-content:flex-end;">
+        <button class="btn" style="background:#555;" onclick="closeMergeDialog()">Cancel</button>
+        <button class="btn" onclick="executeMerge()">Merge</button>
+      </div>
+    </div>
+
+    <!-- Reset target dialog overlay -->
+    <div id="reset-dialog-overlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:999;"></div>
+    <div id="reset-dialog" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#252526; border:1px solid #3c3c3c; border-radius:4px; padding:1.5rem; z-index:1000; min-width:420px; max-width:640px; box-shadow:0 0 20px rgba(0,0,0,0.8);">
+      <h3 style="margin:0 0 1rem; color:#d4d4d4; font-size:1rem;">Restart progress CSV</h3>
+      <p style="color:#f2c6c6; font-size:0.88rem; margin-bottom:0.7rem;">
+        This will delete and recreate the target progress CSV using the current source CSV as baseline.
+      </p>
+      <p style="color:#9e9e9e; font-size:0.85rem; margin-bottom:0.9rem;">
+        Target: <span id="reset-target-preview" style="color:#d4d4d4;"></span>
+      </p>
+      <label style="display:flex; align-items:flex-start; gap:0.45rem; color:#c8c8c8; font-size:0.85rem; margin-bottom:1rem;">
+        <input type="checkbox" id="reset-confirm-checkbox" onchange="refreshResetConfirmState()" />
+        I understand this will remove the existing progress CSV content.
+      </label>
+      <div style="display:flex; gap:0.6rem; justify-content:flex-end;">
+        <button class="btn" style="background:#555;" onclick="closeResetDialog()">Cancel</button>
+        <button class="btn" id="reset-confirm-btn" style="background:#8b2d2d;" onclick="executeResetTargetFile()" disabled>Yes, restart</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const __petToken = new URLSearchParams(window.location.search).get('token');
+
+    function __petAddToken(url) {
+      if (!__petToken) return url;
+      if (!url || typeof url !== 'string') return url;
+      if (!url.startsWith('/')) return url;
+      if (url.includes('token=')) return url;
+      return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(__petToken);
+    }
+
+    const __petNativeFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      if (typeof input === 'string') {
+        return __petNativeFetch(__petAddToken(input), init);
+      }
+      if (input instanceof Request) {
+        return __petNativeFetch(new Request(__petAddToken(input.url), input), init);
+      }
+      return __petNativeFetch(input, init);
+    };
+
+    const __PetNativeEventSource = window.EventSource;
+    window.EventSource = function(url, config) {
+      return new __PetNativeEventSource(__petAddToken(url), config);
+    };
+
+    /* ── Tab switching ── */
+    function switchTab(name) {
+      document.querySelectorAll('.tab-btn').forEach(b =>
+        b.classList.toggle('active', b.dataset.target === name)
+      );
+      document.querySelectorAll('.tab-pane').forEach(p =>
+        p.classList.remove('active')
+      );
+      document.getElementById('tab-' + name).classList.add('active');
+    }
+
+    /* ── On load: fetch config from server ── */
+    window.addEventListener('DOMContentLoaded', async () => {
+      try {
+        const defaultSelected = ['subject', 'session'];
+        const defaultTracking = [
+          'BIDS',
+          'PETPrep ran',
+          'QC motion correction',
+          'QC coregistration',
+          'QC MRI delineation',
+          'QC Freesurfer',
+        ];
+
+        document.getElementById('csv-columns').value = defaultSelected.join(', ');
+        document.getElementById('status-column-names').value = defaultTracking.join(', ');
+
+        const petCfg = await fetch('/get-config').then(r => r.json());
+        document.getElementById('path-static').textContent = petCfg.project_root;
+        if (petCfg.warning) {
+          const w = document.getElementById('path-warn');
+          w.textContent = '⚠ ' + petCfg.warning;
+          w.style.display = '';
+        }
+        if (petCfg.default_path) {
+          document.getElementById('overview-path').value = petCfg.default_path;
+        }
+
+        const csvCfg = await fetch('/get-csv-config').then(r => r.json());
+        document.getElementById('csv-path-static').textContent = csvCfg.project_root;
+        document.getElementById('target-path-static').textContent = csvCfg.project_root;
+        if (csvCfg.warning) {
+          const w = document.getElementById('csv-warn');
+          w.textContent = '⚠ ' + csvCfg.warning;
+          w.style.display = '';
+        }
+        if (csvCfg.default_csv) {
+          document.getElementById('csv-path').value = csvCfg.default_csv;
+          document.getElementById('target-file-path').value = deriveTargetPath(csvCfg.default_csv);
+        }
+        renderCsvFileList(csvCfg.csv_files || []);
+        renderTargetFileList(csvCfg.csv_files || []);
+        if (csvCfg.default_csv) {
+          const loadedTarget = await loadTargetFile();
+          if (!loadedTarget) {
+            await loadCsvFile();
+          }
+        }
+      } catch (_) { /* ignore */ }
+    });
+
+    /* ── Stream raw PET file overview via SSE ── */
+    let activeSource = null;
+    const defaultSelectedColumns = ['subject', 'session'];
+    const trackingColumns = [
+      'BIDS',
+      'PETPrep ran',
+      'QC motion correction',
+      'QC coregistration',
+      'QC MRI delineation',
+      'QC Freesurfer',
+    ];
+    const WORKFLOW_ALIASES = {
+      bids: ['BIDS', 'BIDSification'],
+      petprep: ['PETPrep ran', 'Run PETPrep', 'PETPrep'],
+      qcMotion: ['QC motion correction', 'Motion correction'],
+      qcCoreg: ['QC coregistration', 'Coregistration'],
+      qcMri: ['QC MRI delineation', 'MRI delineation'],
+      qcFs: ['QC Freesurfer', 'Freesurfer'],
+    };
+    let currentCsv = { path: '', headers: [], rows: [], writableColumns: [], mode: 'source' };
+
+    function setCsvFeedback(message, type) {
+      const meta = document.getElementById('csv-meta');
+      if (!meta) return;
+
+      if (type === 'ok') {
+        meta.innerHTML = '<span class="t-ok">' + esc(message) + '</span>';
+        return;
+      }
+      if (type === 'err') {
+        meta.innerHTML = '<span class="t-err">' + esc(message) + '</span>';
+        return;
+      }
+
+      meta.textContent = message;
+    }
+
+    function deriveTargetPath(sourcePath) {
+      const s = String(sourcePath || '').trim();
+      if (!s) return 'BIDS_pet/derivatives/progress.csv';
+
+      const normalized = s.replace(/\\/g, '/');
+      const lastSlash = normalized.lastIndexOf('/');
+      if (lastSlash >= 0) {
+        return normalized.slice(0, lastSlash + 1) + 'progress.csv';
+      }
+      return 'BIDS_pet/derivatives/progress.csv';
+    }
+
+    function isReadOnly() {
+      const toggle = document.getElementById('read-only-toggle');
+      return !toggle || toggle.checked;
+    }
+
+    function refreshEditability() {
+      if (currentCsv && currentCsv.headers && currentCsv.headers.length) {
+        renderCsvTable(currentCsv.headers, currentCsv.rows);
+      }
+      if (isReadOnly()) {
+        setCsvFeedback('Read-only mode enabled. Load target and uncheck Read-only to edit.', 'ok');
+      }
+    }
+
+    function splitColumns(text) {
+      return String(text || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+    }
+
+    function normalizeHeaderName(value) {
+      return String(value || '')
+        .toLowerCase()
+        .replace(/[_-]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    function findHeaderIndexByAliases(headers, aliases) {
+      const normalizedAliases = (aliases || []).map(normalizeHeaderName);
+      for (let i = 0; i < headers.length; i++) {
+        const normalizedHeader = normalizeHeaderName(headers[i]);
+        if (normalizedAliases.includes(normalizedHeader)) {
+          return i;
+        }
+      }
+      return -1;
+    }
+
+    function getWorkflowColumnIndexes() {
+      const headers = currentCsv.headers || [];
+      return {
+        bids: findHeaderIndexByAliases(headers, WORKFLOW_ALIASES.bids),
+        petprep: findHeaderIndexByAliases(headers, WORKFLOW_ALIASES.petprep),
+        qc: [
+          findHeaderIndexByAliases(headers, WORKFLOW_ALIASES.qcMotion),
+          findHeaderIndexByAliases(headers, WORKFLOW_ALIASES.qcCoreg),
+          findHeaderIndexByAliases(headers, WORKFLOW_ALIASES.qcMri),
+          findHeaderIndexByAliases(headers, WORKFLOW_ALIASES.qcFs),
+        ].filter(i => i >= 0),
+      };
+    }
+
+    function headerMatchesAliases(headerName, aliases) {
+      return findHeaderIndexByAliases([headerName], aliases) === 0;
+    }
+
+    function ensureTrackingColumns(headers, rows) {
+      const updatedHeaders = (headers || []).slice();
+      const updatedRows = (rows || []).map(r => (r || []).slice());
+      const added = [];
+      const addedDefaults = [];
+
+      for (const col of trackingColumns) {
+        const aliases = col === 'BIDS'
+          ? WORKFLOW_ALIASES.bids
+          : (col === 'PETPrep ran'
+            ? WORKFLOW_ALIASES.petprep
+            : [col]);
+
+        if (findHeaderIndexByAliases(updatedHeaders, aliases) >= 0) continue;
+        updatedHeaders.push(col);
+        added.push(col);
+        addedDefaults.push(col === 'BIDS' ? 'to do' : '');
+      }
+
+      if (added.length) {
+        for (const row of updatedRows) {
+          for (let i = 0; i < addedDefaults.length; i++) {
+            row.push(addedDefaults[i]);
+          }
+        }
+      }
+
+      return { headers: updatedHeaders, rows: updatedRows, added };
+    }
+
+    function getColumnIndex(name) {
+      return currentCsv.headers.indexOf(name);
+    }
+
+    function setRowStatus(row, columnName, value) {
+      const idx = getColumnIndex(columnName);
+      if (idx < 0 || idx >= row.length) return false;
+      const normalized = normalizeStatus(value);
+      if ((row[idx] || '') === normalized) return false;
+      row[idx] = normalized;
+      return true;
+    }
+
+    function applyStatusDependenciesForRow(row, changedHeader, selectedStatus) {
+      const changed = [];
+
+      const workflow = getWorkflowColumnIndexes();
+      const isBidsChange = headerMatchesAliases(changedHeader, WORKFLOW_ALIASES.bids);
+      const isPetprepChange = headerMatchesAliases(changedHeader, WORKFLOW_ALIASES.petprep);
+
+      if (isBidsChange && selectedStatus === 'done') {
+        // When BIDS is done, unlock and initialize PETPrep to "to do"
+        const petprepIdx = workflow.petprep;
+        if (petprepIdx >= 0) {
+          const current = normalizeStatus(row[petprepIdx]);
+          if (current === '') {
+            row[petprepIdx] = 'to do';
+            changed.push(currentCsv.headers[petprepIdx]);
+          }
+        }
+      }
+
+      if (isPetprepChange && selectedStatus === 'done') {
+        // When PETPrep is done, unlock and initialize all QC steps to "to do"
+        for (const qcIdx of workflow.qc) {
+          const current = normalizeStatus(row[qcIdx]);
+          if (current === '') {
+            row[qcIdx] = 'to do';
+            changed.push(currentCsv.headers[qcIdx]);
+          }
+        }
+      }
+
+      return changed;
+    }
+
+    function applyAutoDetectedStatuses(autoDetected) {
+      if (!Array.isArray(autoDetected) || !autoDetected.length) {
+        return { bids: 0, petprep: 0 };
+      }
+
+      let bidsCount = 0;
+      let petprepCount = 0;
+      const workflow = getWorkflowColumnIndexes();
+      const bidsIdx = workflow.bids;
+      const petprepIdx = workflow.petprep;
+
+      for (const entry of autoDetected) {
+        const rowIndex = Number(entry && entry.row_index);
+        if (!Number.isInteger(rowIndex) || rowIndex < 0 || rowIndex >= currentCsv.rows.length) continue;
+        const row = currentCsv.rows[rowIndex];
+
+        if (entry.bids_done && bidsIdx >= 0) {
+          const prev = normalizeStatus(row[bidsIdx]);
+          if (prev !== 'done' && prev !== 'approved') {
+            row[bidsIdx] = 'done';
+            bidsCount += 1;
+            // Apply cascading: set PETPrep to "to do" if not already set
+            applyStatusDependenciesForRow(row, currentCsv.headers[bidsIdx], 'done');
+          }
+        }
+
+        if (entry.petprep_done && petprepIdx >= 0) {
+          const prev = normalizeStatus(row[petprepIdx]);
+          if (prev !== 'done' && prev !== 'approved') {
+            row[petprepIdx] = 'done';
+            petprepCount += 1;
+            // Apply cascading: set QC steps to "to do" if not already set
+            applyStatusDependenciesForRow(row, currentCsv.headers[petprepIdx], 'done');
+          }
+        }
+      }
+
+      return { bids: bidsCount, petprep: petprepCount };
+    }
+
+    function applyDefaultWorkflowValues() {
+      const workflow = getWorkflowColumnIndexes();
+      const bidsIdx = workflow.bids;
+      if (bidsIdx < 0) return 0;
+
+      let updated = 0;
+      for (const row of currentCsv.rows) {
+        if (bidsIdx >= row.length) {
+          row.length = bidsIdx + 1;
+        }
+        const current = normalizeStatus(row[bidsIdx]);
+        if (current === '') {
+          row[bidsIdx] = 'to do';
+          updated += 1;
+        }
+      }
+      return updated;
+    }
+
+    function runOverview() {
+      const btn = document.getElementById('overview-btn');
+      const out = document.getElementById('overview-output');
+      const relPath = document.getElementById('overview-path').value.trim();
+
+      if (!relPath) {
+        out.innerHTML = '<span class="t-err">Please enter a path.</span>';
+        return;
+      }
+
+      if (activeSource) { activeSource.close(); activeSource = null; }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Loading\u2026';
+      out.innerHTML = '';
+
+      activeSource = new EventSource(
+        '/raw-pet-overview?path=' + encodeURIComponent(relPath)
+      );
+
+      activeSource.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.error === 'invalid_path') {
+          activeSource.close();
+          activeSource = null;
+          btn.disabled = false;
+          btn.textContent = 'Show file overview';
+          out.innerHTML = '<span class="t-err">Invalid path.</span>';
+          return;
+        }
+        if (msg.done) {
+          activeSource.close();
+          activeSource = null;
+          btn.disabled = false;
+          btn.textContent = 'Show file overview';
+          const ok = msg.returncode === 0;
+          out.innerHTML +=
+            '<span class="' + (ok ? 't-ok' : 't-err') + '">' +
+            esc(ok ? '\n\u2713 Done.' : '\n\u2717 Exited with code ' + msg.returncode + '.') +
+            '</span>';
+          out.scrollTop = out.scrollHeight;
+        } else if (msg.file && msg.open_url) {
+          out.innerHTML +=
+            '<a href="' + escAttr(msg.open_url) + '" target="_blank" rel="noopener noreferrer">' +
+            esc(msg.file) +
+            '</a> (' + esc(msg.size_text || 'size unknown') + ')\n';
+          out.scrollTop = out.scrollHeight;
+        } else {
+          out.innerHTML += esc(msg.line) + '\n';
+          out.scrollTop = out.scrollHeight;
+        }
+      };
+
+      activeSource.onerror = () => {
+        activeSource.close();
+        activeSource = null;
+        btn.disabled = false;
+        btn.textContent = 'Show file overview';
+        out.innerHTML += '<span class="t-err">\nConnection error.</span>'; // unexpected network drop
+      };
+    }
+
+    function esc(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function escAttr(s) {
+      return s
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function renderCsvFileList(paths) {
+      const list = document.getElementById('csv-file-list');
+      if (!paths.length) {
+        list.innerHTML = '';
+        return;
+      }
+
+      list.innerHTML = paths
+        .map(p => '<li><button class="tab-btn" style="padding:0.2rem 0.4rem;" onclick="selectCsvPath(\'' + escAttr(p) + '\')">' + esc(p) + '</button></li>')
+        .join('');
+    }
+
+    function renderTargetFileList(paths) {
+      const list = document.getElementById('target-file-list');
+      if (!paths.length) {
+        list.innerHTML = '';
+        return;
+      }
+
+      list.innerHTML = paths
+        .map(p => '<li><button class="tab-btn" style="padding:0.2rem 0.4rem;" onclick="selectTargetPath(\'' + escAttr(p) + '\')">' + esc(p) + '</button></li>')
+        .join('');
+    }
+
+    function selectCsvPath(path) {
+      document.getElementById('csv-path').value = path;
+      const targetInput = document.getElementById('target-file-path');
+      if (!String(targetInput.value || '').trim()) {
+        targetInput.value = deriveTargetPath(path);
+      }
+    }
+
+    function selectTargetPath(path) {
+      document.getElementById('target-file-path').value = path;
+    }
+
+    async function loadCsvFile() {
+      const btn = document.getElementById('csv-load-btn');
+      const table = document.getElementById('csv-table');
+      const wrap = document.getElementById('csv-table-wrap');
+      const relPath = document.getElementById('csv-path').value.trim();
+      let selectedColumns = document.getElementById('csv-columns').value.trim();
+
+      if (!relPath) {
+        setCsvFeedback('Please enter a CSV path.', 'err');
+        wrap.style.display = 'none';
+        return;
+      }
+
+      if (!selectedColumns) {
+        selectedColumns = defaultSelectedColumns.join(', ');
+        document.getElementById('csv-columns').value = selectedColumns;
+      }
+
+      // Always include tracking columns alongside selected columns.
+      const selected = splitColumns(selectedColumns);
+      const requestedColumns = Array.from(new Set(selected.concat(trackingColumns)));
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Loading\u2026';
+      setCsvFeedback('Loading CSV...');
+      wrap.style.display = 'none';
+      table.innerHTML = '';
+
+      try {
+        let url = '/get-csv?path=' + encodeURIComponent(relPath);
+        if (requestedColumns.length) {
+          url += '&columns=' + encodeURIComponent(requestedColumns.join(', '));
+        }
+
+        const res = await fetch(url);
+        if (!res.ok) {
+          const msg = await res.text();
+          throw new Error(msg || ('HTTP ' + res.status));
+        }
+        const data = await res.json();
+        const writableColumns = (data.headers || []).slice();
+        const normalized = ensureTrackingColumns(data.headers || [], data.rows || []);
+
+        currentCsv = {
+          path: data.path || relPath,
+          headers: normalized.headers,
+          rows: normalized.rows,
+          writableColumns: [],
+          mode: 'source',
+        };
+        const defaultedCount = applyDefaultWorkflowValues();
+        const autoCounts = applyAutoDetectedStatuses(data.auto_detected || []);
+        renderCsvTable(currentCsv.headers, currentCsv.rows);
+        wrap.style.display = 'block';
+        const addedText = normalized.added.length
+          ? ' | Added tracking columns: ' + normalized.added.join(', ')
+          : '';
+        const autoText = (autoCounts.bids || autoCounts.petprep)
+          ? ' | Auto-detected done: BIDS ' + autoCounts.bids + ', PETPrep ' + autoCounts.petprep
+          : '';
+        const defaultText = defaultedCount
+          ? ' | Defaulted BIDS to To do: ' + defaultedCount
+          : '';
+        const truncText = data.truncated ? ' (showing first 1000 rows)' : '';
+        setCsvFeedback(
+          'Loaded: ' + (data.path || relPath) +
+          ' | Rows: ' + String(data.row_count || 0) +
+          truncText +
+          addedText +
+          defaultText +
+          autoText +
+          ' | Source mode (read-only; save to target to persist)',
+          'ok'
+        );
+        return true;
+      } catch (err) {
+        setCsvFeedback('Failed to load CSV: ' + String(err.message || err), 'err');
+        return false;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Load CSV';
+      }
+    }
+
+    async function initializeTargetFromSource() {
+      const sourcePath = document.getElementById('csv-path').value.trim();
+      const targetInput = document.getElementById('target-file-path');
+
+      if (!sourcePath) {
+        setCsvFeedback('Load/select a source CSV first.', 'err');
+        return;
+      }
+      if (!targetInput.value.trim()) {
+        targetInput.value = deriveTargetPath(sourcePath);
+      }
+
+      const ok = await loadCsvFile();
+      if (!ok) return;
+      await saveTargetFile();
+      await loadTargetFile();
+    }
+
+    function renderCsvTable(headers, rows) {
+      const table = document.getElementById('csv-table');
+
+      if (!headers.length) {
+        table.innerHTML = '<tr><td>No data</td></tr>';
+        return;
+      }
+
+      const headHtml =
+        '<thead><tr>' +
+        headers.map(h => '<th>' + esc(h) + '</th>').join('') +
+        '</tr></thead>';
+
+      const bodyHtml =
+        '<tbody>' +
+        rows.map((row, rowIndex) =>
+          '<tr>' +
+          headers.map((header, i) => renderCsvCell(header, row[i], rowIndex, i)).join('') +
+          '</tr>'
+        ).join('') +
+        '</tbody>';
+
+      table.innerHTML = headHtml + bodyHtml;
+    }
+
+    function isQcColumn(header) {
+      const h = normalizeHeaderName(header);
+      const qcAliases = [
+        'qc motion correction',
+        'motion correction',
+        'qc coregistration',
+        'coregistration',
+        'qc mri delineation',
+        'mri delineation',
+        'qc freesurfer',
+        'freesurfer',
+      ];
+      return qcAliases.includes(h);
+    }
+
+    function isBidsColumn(header) {
+      const h = normalizeHeaderName(header);
+      return findHeaderIndexByAliases([header], WORKFLOW_ALIASES.bids) === 0;
+    }
+
+    function isPetprepColumn(header) {
+      const h = normalizeHeaderName(header);
+      return findHeaderIndexByAliases([header], WORKFLOW_ALIASES.petprep) === 0;
+    }
+
+    function getRowBidsStatus(row) {
+      const workflow = getWorkflowColumnIndexes();
+      if (workflow.bids < 0) return '';
+      return normalizeStatus(row[workflow.bids] || '');
+    }
+
+    function getRowPetprepStatus(row) {
+      const workflow = getWorkflowColumnIndexes();
+      if (workflow.petprep < 0) return '';
+      return normalizeStatus(row[workflow.petprep] || '');
+    }
+
+    function isCellEditableAndVisible(header, row) {
+      // Check if this is a workflow task cell that should be shown
+      if (isBidsColumn(header)) {
+        return true; // BIDS is always visible and editable
+      }
+
+      if (isPetprepColumn(header)) {
+        const bidsStatus = getRowBidsStatus(row);
+        return bidsStatus === 'done'; // PETPrep only editable if BIDS is done
+      }
+
+      if (isQcColumn(header)) {
+        const petprepStatus = getRowPetprepStatus(row);
+        return petprepStatus === 'done'; // QC only editable if PETPrep is done
+      }
+
+      return false;
+    }
+
+    function isCellVisible(header, row) {
+      // Check if this cell should be shown at all
+      if (isBidsColumn(header)) {
+        return true; // BIDS always visible
+      }
+
+      if (isPetprepColumn(header)) {
+        return true; // PETPrep always visible
+      }
+
+      if (isQcColumn(header)) {
+        const petprepStatus = getRowPetprepStatus(row);
+        return petprepStatus === 'done'; // QC only visible if PETPrep is done
+      }
+
+      return false;
+    }
+
+    function renderCsvCell(header, rawValue, rowIndex, colIndex) {
+      const value = String(rawValue || '');
+      const row = currentCsv.rows[rowIndex] || [];
+
+      // Check if this is a workflow task cell
+      const isWorkflowTask = isBidsColumn(header) || isPetprepColumn(header) || isQcColumn(header);
+
+      if (isWorkflowTask) {
+        // For workflow tasks, always render a cell (visible or disabled)
+        if (!isCellVisible(header, row)) {
+          return '<td style="opacity:0.3;"></td>'; // Hidden QC
+        }
+
+        const isEditable = !isReadOnly() && currentCsv.mode === 'target' && isCellEditableAndVisible(header, row);
+        let normalized = normalizeStatus(value);
+        if (isBidsColumn(header) && normalized === '') {
+          normalized = 'to do';
+          row[colIndex] = normalized;
+        }
+        const statusClass = normalized === ''
+          ? 'status-select-blank'
+          : (normalized === 'to do'
+            ? 'status-select-to-do'
+            : (normalized === 'done'
+              ? 'status-select-done'
+              : (normalized === 'approved' ? 'status-select-approved' : 'status-select-denied')));
+
+        const locked = !isEditable;
+        const lockedAttr = locked ? ' data-locked="true"' : '';
+        return '<td><select class="status-select ' + statusClass + '"' + lockedAttr + ' data-row="' + rowIndex + '" data-col="' + colIndex + '" onchange="updateStatusSelect(' + rowIndex + ',' + colIndex + ', this.value)">' +
+          '<option value=""' + (normalized === '' ? ' selected' : '') + '></option>' +
+          '<option value="to do"' + (normalized === 'to do' ? ' selected' : '') + '>To do</option>' +
+          '<option value="done"' + (normalized === 'done' ? ' selected' : '') + '>Done</option>' +
+          '<option value="approved"' + (normalized === 'approved' ? ' selected' : '') + '>Approved</option>' +
+          '<option value="denied"' + (normalized === 'denied' ? ' selected' : '') + '>Denied</option>' +
+          '</select></td>';
+      }
+
+      // Non-workflow cells
+      if (isReadOnly() || !isEditableStatusCell(header, value)) {
+        return '<td>' + esc(value) + '</td>';
+      }
+
+      const normalized = normalizeStatus(value);
+      const statusClass = normalized === ''
+        ? 'status-select-blank'
+        : (normalized === 'to do'
+          ? 'status-select-to-do'
+          : (normalized === 'done'
+            ? 'status-select-done'
+            : (normalized === 'approved' ? 'status-select-approved' : 'status-select-denied')));
+
+      return '<td><select class="status-select ' + statusClass + '" onchange="updateStatusSelect(' + rowIndex + ',' + colIndex + ', this.value)">' +
+        '<option value=""' + (normalized === '' ? ' selected' : '') + '></option>' +
+        '<option value="to do"' + (normalized === 'to do' ? ' selected' : '') + '>To do</option>' +
+        '<option value="done"' + (normalized === 'done' ? ' selected' : '') + '>Done</option>' +
+        '<option value="approved"' + (normalized === 'approved' ? ' selected' : '') + '>Approved</option>' +
+        '<option value="denied"' + (normalized === 'denied' ? ' selected' : '') + '>Denied</option>' +
+        '</select></td>';
+    }
+
+    function isEditableStatusCell(header, value) {
+      const h = String(header || '').toLowerCase();
+      const v = String(value || '').toLowerCase().trim();
+      if (v === 'not done' || v === 'to do' || v === 'done' || v === 'approved' || v === 'denied') {
+        return true;
+      }
+      if (trackingColumns.includes(header)) {
+        return true;
+      }
+      return h.includes('status') || h.includes('qc') || h.includes('approval') || h.includes('done');
+    }
+
+    function normalizeStatus(value) {
+      const v = String(value || '').toLowerCase().trim();
+      if (!v) return '';
+      if (v === 'not done' || v === 'todo' || v === 'to-do') return 'to do';
+      if (v === 'done') return 'done';
+      if (v === 'approved') return 'approved';
+      if (v === 'denied') return 'denied';
+      return '';
+    }
+
+    async function updateStatusSelect(rowIndex, colIndex, selectedValue) {
+      if (isReadOnly()) {
+        renderCsvTable(currentCsv.headers, currentCsv.rows);
+        setCsvFeedback('Read-only mode is enabled.', 'err');
+        return;
+      }
+      if (currentCsv.mode !== 'target') {
+        renderCsvTable(currentCsv.headers, currentCsv.rows);
+        setCsvFeedback('Load a target file before editing statuses.', 'err');
+        return;
+      }
+
+      const header = currentCsv.headers[colIndex];
+      const cell = currentCsv.rows[rowIndex];
+      if (!cell) return;
+
+      // Check if this cell is locked by cascading dependencies
+      if (!isCellEditableAndVisible(header, cell)) {
+        setCsvFeedback('This task is locked. Complete earlier tasks to unlock it.', 'err');
+        renderCsvTable(currentCsv.headers, currentCsv.rows);
+        return;
+      }
+
+      const next = normalizeStatus(selectedValue);
+
+      const previousRow = cell.slice();
+      cell[colIndex] = next;
+      const dependencyChanges = applyStatusDependenciesForRow(cell, header, next);
+      renderCsvTable(currentCsv.headers, currentCsv.rows);
+
+      const changedHeaders = [header].concat(dependencyChanges);
+      const writableChanges = changedHeaders.filter(h => currentCsv.writableColumns.includes(h));
+      const hasMemoryOnlyChanges = changedHeaders.some(h => !currentCsv.writableColumns.includes(h));
+
+      try {
+        for (const changedHeader of writableChanges) {
+          const idx = getColumnIndex(changedHeader);
+          const value = idx >= 0 ? (cell[idx] || '') : '';
+          const res = await fetch('/update-csv-cell', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              path: currentCsv.path,
+              row_index: rowIndex,
+              column: changedHeader,
+              value: value,
+            }),
+          });
+
+          if (!res.ok) {
+            const msg = await res.text();
+            throw new Error(msg || ('HTTP ' + res.status));
+          }
+        }
+
+        if (hasMemoryOnlyChanges) {
+          setCsvFeedback('Updated status workflow in memory. Click "Save to target" to persist tracking columns.', 'ok');
+        }
+      } catch (err) {
+        currentCsv.rows[rowIndex] = previousRow;
+        renderCsvTable(currentCsv.headers, currentCsv.rows);
+        setCsvFeedback('Failed to save update: ' + String(err.message || err), 'err');
+      }
+    }
+
+    /* ── Target file management ── */
+    async function loadTargetFile() {
+      const btn = document.getElementById('load-target-btn');
+      const relPath = document.getElementById('target-file-path').value.trim();
+
+      if (!relPath) {
+        setCsvFeedback('Please enter a target file path.', 'err');
+        return false;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Loading\u2026';
+      setCsvFeedback('Loading target file...');
+
+      try {
+        const res = await fetch('/load-target-file?path=' + encodeURIComponent(relPath));
+        if (!res.ok) {
+          const msg = await res.text();
+          throw new Error(msg || ('HTTP ' + res.status));
+        }
+        const data = await res.json();
+        const writableColumns = (data.headers || []).slice();
+        const normalized = ensureTrackingColumns(data.headers || [], data.rows || []);
+        currentCsv = {
+          path: data.path || relPath,
+          headers: normalized.headers,
+          rows: normalized.rows,
+          writableColumns: writableColumns,
+          mode: 'target',
+        };
+        const defaultedCount = applyDefaultWorkflowValues();
+        const autoCounts = applyAutoDetectedStatuses(data.auto_detected || []);
+        renderCsvTable(currentCsv.headers, currentCsv.rows);
+        document.getElementById('csv-table-wrap').style.display = 'block';
+        const addedText = normalized.added.length
+          ? ' | Added tracking columns: ' + normalized.added.join(', ')
+          : '';
+        const autoText = (autoCounts.bids || autoCounts.petprep)
+          ? ' | Auto-detected done: BIDS ' + autoCounts.bids + ', PETPrep ' + autoCounts.petprep
+          : '';
+        const defaultText = defaultedCount
+          ? ' | Defaulted BIDS to To do: ' + defaultedCount
+          : '';
+        setCsvFeedback(
+          'Target loaded: ' + (data.path || relPath) +
+          ' | Rows: ' + String(data.row_count || 0) +
+          addedText +
+          defaultText +
+          autoText +
+          (isReadOnly() ? ' | Read-only' : ' | Editable target mode'),
+          'ok'
+        );
+        return true;
+      } catch (err) {
+        setCsvFeedback('Failed to load target: ' + String(err.message || err), 'err');
+        return false;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Load target';
+      }
+    }
+
+    async function saveTargetFile() {
+      const btn = document.getElementById('save-target-btn');
+      const targetPath = document.getElementById('target-file-path').value.trim();
+      const sourcePath = document.getElementById('csv-path').value.trim();
+      const statusCols = document.getElementById('status-column-names').value.trim();
+
+      if (!targetPath) {
+        setCsvFeedback('Please enter a target file path.', 'err');
+        return;
+      }
+
+      if (!currentCsv.headers.length) {
+        setCsvFeedback('No data loaded. Load a CSV or target file first.', 'err');
+        return;
+      }
+
+      if (sourcePath && targetPath === sourcePath) {
+        setCsvFeedback('Target path must differ from source path to avoid overwriting source.', 'err');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Saving\u2026';
+      setCsvFeedback('Saving target file...');
+
+      try {
+        const res = await fetch('/save-target-file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: targetPath,
+            headers: currentCsv.headers,
+            rows: currentCsv.rows,
+            status_columns: statusCols ? statusCols.split(',').map(c => c.trim()) : [],
+          }),
+        });
+
+        if (!res.ok) {
+          const msg = await res.text();
+          throw new Error(msg || ('HTTP ' + res.status));
+        }
+
+        currentCsv.path = targetPath;
+        currentCsv.writableColumns = currentCsv.headers.slice();
+        currentCsv.mode = 'target';
+        setCsvFeedback('Target saved successfully to ' + targetPath, 'ok');
+      } catch (err) {
+        setCsvFeedback('Failed to save target: ' + String(err.message || err), 'err');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Save to target';
+      }
+    }
+
+    function showMergeDialog() {
+      document.getElementById('merge-dialog-overlay').style.display = 'block';
+      document.getElementById('merge-dialog').style.display = 'block';
+      loadCompletedSessionsFiles();
+    }
+
+    function closeMergeDialog() {
+      document.getElementById('merge-dialog-overlay').style.display = 'none';
+      document.getElementById('merge-dialog').style.display = 'none';
+      document.getElementById('merge-file-path').value = '';
+      document.getElementById('merge-file-select').value = '';
+    }
+
+    function showResetDialog() {
+      const targetPath = document.getElementById('target-file-path').value.trim();
+      if (!targetPath) {
+        setCsvFeedback('Please enter/load a target file path first.', 'err');
+        return;
+      }
+
+      document.getElementById('reset-target-preview').textContent = targetPath;
+      document.getElementById('reset-confirm-checkbox').checked = false;
+      refreshResetConfirmState();
+      document.getElementById('reset-dialog-overlay').style.display = 'block';
+      document.getElementById('reset-dialog').style.display = 'block';
+    }
+
+    function closeResetDialog() {
+      document.getElementById('reset-dialog-overlay').style.display = 'none';
+      document.getElementById('reset-dialog').style.display = 'none';
+      document.getElementById('reset-confirm-checkbox').checked = false;
+      refreshResetConfirmState();
+    }
+
+    function refreshResetConfirmState() {
+      const checked = !!document.getElementById('reset-confirm-checkbox').checked;
+      document.getElementById('reset-confirm-btn').disabled = !checked;
+    }
+
+    async function executeResetTargetFile() {
+      const checkbox = document.getElementById('reset-confirm-checkbox');
+      if (!checkbox.checked) {
+        setCsvFeedback('Tick the confirmation box before restarting.', 'err');
+        return;
+      }
+
+      const btn = document.getElementById('reset-confirm-btn');
+      const targetPath = document.getElementById('target-file-path').value.trim();
+      const sourcePath = document.getElementById('csv-path').value.trim();
+
+      if (!targetPath) {
+        setCsvFeedback('Missing target path.', 'err');
+        return;
+      }
+      if (!sourcePath) {
+        setCsvFeedback('Select/load a source CSV first so the target can be rebuilt.', 'err');
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Restarting\u2026';
+      setCsvFeedback('Rebuilding target progress CSV from source...');
+
+      try {
+        const loaded = await loadCsvFile();
+        if (!loaded) {
+          throw new Error('Source CSV could not be loaded.');
+        }
+
+        let res = await fetch('/reset-target-file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            path: targetPath,
+            headers: currentCsv.headers,
+            rows: currentCsv.rows,
+          }),
+        });
+
+        // Backward-compatible fallback: older server instances may not expose /reset-target-file yet.
+        if (res.status === 404) {
+          res = await fetch('/save-target-file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              path: targetPath,
+              headers: currentCsv.headers,
+              rows: currentCsv.rows,
+              status_columns: [],
+            }),
+          });
+        }
+
+        if (!res.ok) {
+          const msg = await res.text();
+          throw new Error(msg || ('HTTP ' + res.status));
+        }
+
+        await loadTargetFile();
+        setCsvFeedback('Progress CSV restarted successfully: ' + targetPath, 'ok');
+        closeResetDialog();
+      } catch (err) {
+        setCsvFeedback('Failed to restart progress CSV: ' + String(err.message || err), 'err');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Yes, restart';
+      }
+    }
+
+    async function loadCompletedSessionsFiles() {
+      const select = document.getElementById('merge-file-select');
+      select.innerHTML = '<option value="">-- Loading --</option>';
+      select.disabled = true;
+
+      try {
+        const res = await fetch('/get-completed-sessions-files');
+        if (!res.ok) {
+          throw new Error('HTTP ' + res.status + ': ' + await res.text());
+        }
+        const data = await res.json();
+        const files = data.completed_files || [];
+
+        if (!files || files.length === 0) {
+          select.innerHTML = '<option value="">-- No files found --</option>';
+          select.disabled = true;
+        } else {
+          select.innerHTML = '<option value="">-- Select a file --</option>';
+          for (const file of files) {
+            const option = document.createElement('option');
+            option.value = file;
+            option.textContent = file;
+            select.appendChild(option);
+          }
+          select.disabled = false;
+        }
+      } catch (err) {
+        console.error('Error loading completed sessions files:', err);
+        select.innerHTML = '<option value="">-- Error: ' + (err.message || 'Unknown error') + ' --</option>';
+        select.disabled = true;
+      }
+    }
+
+    function mergeFileSelected() {
+      const select = document.getElementById('merge-file-select');
+      const input = document.getElementById('merge-file-path');
+      if (select.value) {
+        input.value = select.value;
+      }
+    }
+
+    async function executeMerge() {
+      if (!currentCsv.path) {
+        alert('Please load a target file first.');
+        return;
+      }
+
+      const completedPath = document.getElementById('merge-file-path').value.trim();
+      if (!completedPath) {
+        alert('Please enter a completed sessions file path.');
+        return;
+      }
+
+      const btn = document.querySelector('#merge-dialog button:last-child');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Merging\u2026';
+      setCsvFeedback('Merging completed sessions...');
+
+      try {
+        const res = await fetch('/merge-completed-sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            target_path: currentCsv.path,
+            completed_path: completedPath,
+          }),
+        });
+
+        if (!res.ok) {
+          const msg = await res.text();
+          throw new Error(msg || ('HTTP ' + res.status));
+        }
+
+        const data = await res.json();
+        currentCsv = {
+          path: data.path || currentCsv.path,
+          headers: data.headers || currentCsv.headers,
+          rows: data.rows || currentCsv.rows,
+          writableColumns: data.headers || currentCsv.headers,
+          mode: 'target',
+        };
+        const normalized = ensureTrackingColumns(currentCsv.headers, currentCsv.rows);
+        currentCsv.headers = normalized.headers;
+        currentCsv.rows = normalized.rows;
+        renderCsvTable(currentCsv.headers, currentCsv.rows);
+        setCsvFeedback(
+          'Merged ' + String(data.merged_count || 0) +
+          ' rows from completed file. Total rows: ' + String(data.row_count || currentCsv.rows.length),
+          'ok'
+        );
+        closeMergeDialog();
+      } catch (err) {
+        setCsvFeedback('Failed to merge: ' + String(err.message || err), 'err');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Merge';
+      }
+    }
+  </script>
+</body>
+</html>

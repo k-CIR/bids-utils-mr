@@ -1,53 +1,15 @@
 # bids-utils-mr
-Utilities in the project folder on SPICE to support PET data checks,
-HTML overview tools, and CSV-based PET QC progress tracking.
+Providing an easy to use interface for creating a config file and running [dcm2bids](https://unfmontreal.github.io/Dcm2Bids/latest/) on [SPICE](https://k-cir.github.io/cir-wiki/SPICE/) from your local computer. This will convert raw dicoms to nifti, and order them according to BIDS.
 
-## What the app does
+1. Clone this repository to your project folder on SPICE.
+2. Clone the repository: [serve-mr-bids](https://github.com/k-CIR/serve-mr-bids) to your local machine to connect to the service running on SPICE.
 
-- Serves a local web UI for PET utilities.
-- PET overview tab:
-	- Lists top-level `.html` files in a selected PET folder.
-	- Opens listed HTML files in the browser.
-- PET QC overview tab:
-	- Lists CSV files directly inside `derivatives`.
-	- Loads a source CSV and manages a separate target QC tracker CSV.
-	- Supports read-only mode, editable status dropdowns, and merge-from-completed workflow.
-	- **Add rows from completed sessions**: Merge new rows from completed session files with automatic file discovery.
+All processing is done by dcm2bids on SPICE. This repository provide an interface by serving a html-file (over ssh) to your local machine that makes it easy to construct a config-file for dcm2bids.
 
-## CSV Tracker Workflow (PET QC overview tab)
+See the cir-wiki pages: https://k-cir.github.io/cir-wiki/mrc/mrc-bids/ for a detailed description on how to use the interface.
 
-The PET QC overview tab is designed around two files:
 
-- Source CSV: `completed_sessions_*.csv` (reference input)
-- Target CSV: `progress.csv` (QC tracker that you continue editing over time)
+<img width="1614" height="1887" alt="image" src="https://github.com/user-attachments/assets/bcc95e7f-f81f-4b42-9f9e-4efff6551b80" />
 
-### Recommended file locations
 
-- Source CSV: `BIDS_pet/derivatives/completed_sessions_*.csv`
-- Target CSV: `BIDS_pet/derivatives/progress.csv`
-
-Only CSV files directly inside `derivatives` are listed by the UI.
-
-## How to use
-
-1. Start the server.
-2. Open the app in your browser and go to **PET QC overview**.
-3. Set source CSV to your `completed_sessions_*.csv` file.
-4. Set target CSV to `BIDS_pet/derivatives/progress.csv`.
-5. Keep **Read-only** enabled by default.
-6. Click **Initialize target from source** to create/update target columns and rows.
-7. Click **Load target** when you want to continue work from `progress.csv`.
-8. Disable **Read-only** only when you want to edit status fields.
-
-## Keeping progress.csv up to date
-
-When new sessions appear in completed session files:
-
-1. Load your current `progress.csv` target.
-2. Click **Add rows from completed sessions**.
-3. A dialog appears with:
-   - **Dropdown menu**: Automatically lists all CSV files containing the pattern `completed_pet_sessions` in the derivatives directory. Simply select from the list.
-   - **Manual path entry**: Alternatively, manually enter the file path if needed.
-4. Click **Merge** to append missing subject/session rows to `progress.csv`.
-
-Missing subject/session rows are appended while existing tracker values are preserved.
+*Note: This repository is offered as, and built on, free and open source software and comes with no warranty what so ever. You are yourself ultimately responsible for your data, including making sure your it is safe and backed up.*

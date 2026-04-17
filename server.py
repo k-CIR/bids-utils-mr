@@ -202,8 +202,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             handler(self, query)
             return
 
-        # ── Fall back to static file serving ──
-        super().do_GET()
+        self.send_error(404, "Not found")
 
     def do_POST(self):
         from urllib.parse import urlparse, parse_qs

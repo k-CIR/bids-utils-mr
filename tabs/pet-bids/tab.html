@@ -1,0 +1,586 @@
+<!-- PET BIDS tab fragment -->
+<!-- ── Sub-tab navigation ── -->
+<div class="tabs" id="pet-bids-subtab-bar">
+  <button class="tab-btn active" id="pet-subtab-overview" onclick="petBids.switchSubTab('overview')">PET overview</button>
+  <button class="tab-btn"        id="pet-subtab-qc"       onclick="petBids.switchSubTab('qc')">PET QC overview</button>
+</div>
+
+<!-- ── PET overview ── -->
+<div id="pet-tab-overview" class="tab-pane active">
+  <p class="description">
+    Show a readable overview of all folders and files in the PET raw data directory.
+    A default path is loaded automatically, and you can change it if needed.
+  </p>
+
+  <div id="path-warn" class="warn" style="display:none;"></div>
+
+  <div class="path-row">
+    <span class="path-static" id="path-static">/data/projects/…</span>
+    <span class="path-static">/</span>
+    <input id="overview-path" class="path-input" type="text"
+           spellcheck="false" placeholder="BIDS_pet/..." />
+  </div>
+
+  <button class="btn" id="overview-btn" onclick="petBids.runOverview()">Show file overview</button>
+
+  <div id="overview-output">Output will appear here…</div>
+</div>
+
+<!-- ── PET QC Overview ── -->
+<div id="pet-tab-qc" class="tab-pane">
+  <p class="description">
+    Browse a CSV under derivatives that tracks data collection, BIDSification,
+    and quality-control completion per subject/session.
+  </p>
+
+  <div id="csv-warn" class="warn" style="display:none;"></div>
+
+  <div class="path-row">
+    <span class="path-static" id="csv-path-static">/data/projects/…</span>
+    <span class="path-static">/</span>
+    <input id="csv-path" class="path-input" type="text"
+           spellcheck="false" placeholder="BIDS_pet/derivatives/your_file.csv" />
+  </div>
+
+  <div class="controls-row">
+    <button class="btn" id="csv-load-btn" onclick="petBids.loadCsvFile()">Load CSV</button>
+    <button class="btn" id="init-target-btn" onclick="petBids.initializeTargetFromSource()">Initialize target from source</button>
+    <input id="csv-columns" class="path-input" type="text"
+           spellcheck="false" placeholder="Columns (comma-separated, optional)" />
+    <label style="display:flex; align-items:center; gap:0.35rem; color:#c8c8c8; font-size:0.85rem;">
+      <input type="checkbox" id="read-only-toggle" checked onchange="petBids.refreshEditability()" />
+      Read-only
+    </label>
+  </div>
+
+  <ul id="csv-file-list" class="list"></ul>
+
+  <div id="target-file-section" style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #3c3c3c;">
+    <p class="description" style="margin-bottom: 0.6rem;">
+      <strong>Target file tracking</strong> — Define where to save progress and which columns track status.
+    </p>
+    <div class="path-row">
+      <span class="path-static" id="target-path-static">/data/projects/…</span>
+      <span class="path-static">/</span>
+      <input id="target-file-path" class="path-input" type="text"
+             spellcheck="false" placeholder="BIDS_pet/derivatives/progress.csv" />
+    </div>
+    <div class="controls-row">
+      <button class="btn" id="load-target-btn" onclick="petBids.loadTargetFile()">Load target</button>
+      <button class="btn" id="save-target-btn" onclick="petBids.saveTargetFile()">Create/Save target</button>
+      <button class="btn" id="reset-target-btn" style="background:#8b2d2d;" onclick="petBids.showResetDialog()">Restart progress CSV</button>
+      <button class="btn" id="merge-completed-btn" onclick="petBids.showMergeDialog()">Add rows from completed sessions</button>
+    </div>
+    <label for="status-column-names" style="display:block; color:#9e9e9e; font-size:0.82rem; margin:0.4rem 0 0.3rem;">
+      Status columns (comma-separated)
+    </label>
+    <textarea id="status-column-names" class="path-input"
+              spellcheck="false"
+              style="width:100%; min-height:3rem; resize:vertical; white-space:pre-wrap;"
+              placeholder="BIDS, PETPrep ran, QC motion correction, QC coregistration, QC MRI delineation, QC Freesurfer"></textarea>
+    <ul id="target-file-list" class="list"></ul>
+  </div>
+
+  <div id="csv-meta" class="csv-meta"></div>
+  <div id="csv-table-wrap" class="csv-table-wrap" style="display:none;">
+    <table class="csv-table" id="csv-table"></table>
+  </div>
+
+  <!-- Merge dialog overlay -->
+  <div id="merge-dialog-overlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:999;"></div>
+  <div id="merge-dialog" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#252526; border:1px solid #3c3c3c; border-radius:4px; padding:1.5rem; z-index:1000; min-width:400px; max-width:600px; box-shadow:0 0 20px rgba(0,0,0,0.8);">
+    <h3 style="margin:0 0 1rem; color:#d4d4d4; font-size:1rem;">Add rows from completed sessions</h3>
+    <p style="color:#9e9e9e; font-size:0.88rem; margin-bottom:1rem;">
+      Select a completed sessions CSV file to append its rows to the current target.
+    </p>
+    <label for="merge-file-select" style="display:block; color:#9e9e9e; font-size:0.82rem; margin:0 0 0.4rem;">
+      Available files:
+    </label>
+    <select id="merge-file-select" class="status-select" style="width:100%; margin-bottom:0.8rem;" onchange="petBids.mergeFileSelected()">
+      <option value="">-- Select a file --</option>
+    </select>
+    <label for="merge-file-path" style="display:block; color:#9e9e9e; font-size:0.82rem; margin:0 0 0.3rem;">
+      Or enter path manually:
+    </label>
+    <div class="path-row" style="margin-bottom:0.8rem;">
+      <span class="path-static">File:</span>
+      <input id="merge-file-path" class="path-input" type="text" spellcheck="false" placeholder="BIDS_pet/derivatives/completed.csv" />
+    </div>
+    <div style="display:flex; gap:0.6rem; justify-content:flex-end;">
+      <button class="btn" style="background:#555;" onclick="petBids.closeMergeDialog()">Cancel</button>
+      <button class="btn" onclick="petBids.executeMerge()">Merge</button>
+    </div>
+  </div>
+
+  <!-- Reset target dialog overlay -->
+  <div id="reset-dialog-overlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.6); z-index:999;"></div>
+  <div id="reset-dialog" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#252526; border:1px solid #3c3c3c; border-radius:4px; padding:1.5rem; z-index:1000; min-width:420px; max-width:640px; box-shadow:0 0 20px rgba(0,0,0,0.8);">
+    <h3 style="margin:0 0 1rem; color:#d4d4d4; font-size:1rem;">Restart progress CSV</h3>
+    <p style="color:#f2c6c6; font-size:0.88rem; margin-bottom:0.7rem;">
+      This will delete and recreate the target progress CSV using the current source CSV as baseline.
+    </p>
+    <p style="color:#9e9e9e; font-size:0.85rem; margin-bottom:0.9rem;">
+      Target: <span id="reset-target-preview" style="color:#d4d4d4;"></span>
+    </p>
+    <label style="display:flex; align-items:flex-start; gap:0.45rem; color:#c8c8c8; font-size:0.85rem; margin-bottom:1rem;">
+      <input type="checkbox" id="reset-confirm-checkbox" onchange="petBids.refreshResetConfirmState()" />
+      I understand this will remove the existing progress CSV content.
+    </label>
+    <div style="display:flex; gap:0.6rem; justify-content:flex-end;">
+      <button class="btn" style="background:#555;" onclick="petBids.closeResetDialog()">Cancel</button>
+      <button class="btn" id="reset-confirm-btn" style="background:#8b2d2d;" onclick="petBids.executeResetTargetFile()" disabled>Yes, restart</button>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* ── PET-specific table styles ── */
+  .csv-table-wrap {
+    margin-top: 1rem;
+    border: 1px solid #3c3c3c;
+    border-radius: 4px;
+    overflow: auto;
+    min-height: 22rem;
+    max-height: 75vh;
+    background: #121212;
+  }
+
+  .csv-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+
+  .csv-table th,
+  .csv-table td {
+    border-bottom: 1px solid #2a2a2a;
+    border-right: 1px solid #2a2a2a;
+    padding: 0.4rem 0.5rem;
+    white-space: nowrap;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .csv-table th {
+    position: sticky;
+    top: 0;
+    background: #202020;
+    color: #e0e0e0;
+    z-index: 1;
+  }
+
+  .csv-meta {
+    color: #9e9e9e;
+    font-size: 0.85rem;
+    margin-top: 0.6rem;
+  }
+
+  .status-btn {
+    border: 1px solid #3c3c3c;
+    border-radius: 3px;
+    background: #2a2a2a;
+    color: #d4d4d4;
+    font-size: 0.78rem;
+    font-family: monospace;
+    padding: 0.1rem 0.45rem;
+    cursor: pointer;
+  }
+  .status-btn:hover { background: #373737; }
+  .status-not-done { color: #f48771; }
+  .status-done { color: #4ec9b0; }
+  .status-approved { color: #9cdcfe; }
+
+  .status-select {
+    width: 100%;
+    min-width: 8.5rem;
+    border: 1px solid #3c3c3c;
+    border-radius: 3px;
+    font-size: 0.78rem;
+    font-family: monospace;
+    padding: 0.15rem 0.35rem;
+    color: #d4d4d4;
+    outline: none;
+    background: #2a2a2a;
+    cursor: pointer;
+  }
+  .status-select[data-locked="true"] {
+    opacity: 0.5;
+  }
+  .status-select-blank {
+    background: #2a2a2a;
+    color: #d4d4d4;
+  }
+  .status-select-to-do {
+    background: #43285a;
+    color: #dfb9ff;
+  }
+  .status-select-done {
+    background: #1f3d33;
+    color: #8ce2cc;
+  }
+  .status-select-approved {
+    background: #233b4f;
+    color: #9cdcfe;
+  }
+  .status-select-denied {
+    background: #5a2424;
+    color: #ffb3b3;
+  }
+
+  .list {
+    margin: 0.6rem 0 1rem;
+    padding-left: 1.1rem;
+    color: #9e9e9e;
+    font-size: 0.85rem;
+    max-height: 8rem;
+    overflow-y: auto;
+  }
+</style>
+
+<script>
+  const petBids = (() => {
+    let _token = null;
+
+    function _addToken(url) {
+      if (!_token) return url;
+      if (!url || typeof url !== 'string') return url;
+      if (!url.startsWith('/')) return url;
+      if (url.includes('token=')) return url;
+      return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(_token);
+    }
+
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function escAttr(s) {
+      return esc(s).replace(/"/g, '&quot;');
+    }
+
+    let activeSource = null;
+    let currentCsv = { path: '', headers: [], rows: [], writableColumns: [], mode: 'source' };
+
+    function switchSubTab(name) {
+      document.querySelectorAll('#pet-bids-subtab-bar .tab-btn').forEach(b =>
+        b.classList.toggle('active', b.id === 'pet-subtab-' + name)
+      );
+      document.querySelectorAll('#pet-tab-overview, #pet-tab-qc').forEach(p =>
+        p.classList.remove('active')
+      );
+      document.getElementById('pet-tab-' + name).classList.add('active');
+    }
+
+    async function initializeAndLoad() {
+      try {
+        const defaultSelected = ['subject', 'session'];
+        const defaultTracking = [
+          'BIDS',
+          'PETPrep ran',
+          'QC motion correction',
+          'QC coregistration',
+          'QC MRI delineation',
+          'QC Freesurfer',
+        ];
+
+        document.getElementById('csv-columns').value = defaultSelected.join(', ');
+        document.getElementById('status-column-names').value = defaultTracking.join(', ');
+
+        const petCfg = await fetch(_addToken('/get-config')).then(r => r.json());
+        document.getElementById('path-static').textContent = petCfg.project_root;
+        if (petCfg.warning) {
+          const w = document.getElementById('path-warn');
+          w.textContent = '⚠ ' + petCfg.warning;
+          w.style.display = '';
+        }
+        if (petCfg.default_path) {
+          document.getElementById('overview-path').value = petCfg.default_path;
+        }
+
+        const csvCfg = await fetch(_addToken('/get-csv-config')).then(r => r.json());
+        document.getElementById('csv-path-static').textContent = csvCfg.project_root;
+        document.getElementById('target-path-static').textContent = csvCfg.project_root;
+        if (csvCfg.warning) {
+          const w = document.getElementById('csv-warn');
+          w.textContent = '⚠ ' + csvCfg.warning;
+          w.style.display = '';
+        }
+        if (csvCfg.default_csv) {
+          document.getElementById('csv-path').value = csvCfg.default_csv;
+          document.getElementById('target-file-path').value = csvCfg.default_csv.replace(/[^/]*$/, 'progress.csv');
+        }
+        renderCsvFileList(csvCfg.csv_files || []);
+      } catch (_) { /* ignore */ }
+    }
+
+    function renderCsvFileList(paths) {
+      const list = document.getElementById('csv-file-list');
+      list.innerHTML = '';
+      if (!paths.length) {
+        list.innerHTML = '<li style="color:#9e9e9e;">No CSV files found.</li>';
+        return;
+      }
+      for (const path of paths) {
+        const li = document.createElement('li');
+        li.style.cursor = 'pointer';
+        li.style.color = '#4ec9b0';
+        li.textContent = path;
+        li.onclick = () => { document.getElementById('csv-path').value = path; };
+        list.appendChild(li);
+      }
+    }
+
+    function runOverview() {
+      const btn = document.getElementById('overview-btn');
+      const out = document.getElementById('overview-output');
+      const relPath = document.getElementById('overview-path').value.trim();
+
+      if (!relPath) {
+        out.innerHTML = '<span class="t-err">Please enter a path.</span>';
+        return;
+      }
+
+      if (activeSource) { activeSource.close(); activeSource = null; }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Loading…';
+      out.innerHTML = '';
+
+      activeSource = new EventSource(_addToken('/raw-pet-overview?path=' + encodeURIComponent(relPath)));
+
+      activeSource.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.error === 'invalid_path') {
+          activeSource.close();
+          activeSource = null;
+          btn.disabled = false;
+          btn.textContent = 'Show file overview';
+          out.innerHTML = '<span class="t-err">Invalid path.</span>';
+          return;
+        }
+        if (msg.done) {
+          activeSource.close();
+          activeSource = null;
+          btn.disabled = false;
+          btn.textContent = 'Show file overview';
+          const ok = msg.returncode === 0;
+          out.innerHTML +=
+            '<span class="' + (ok ? 't-ok' : 't-err') + '">' +
+            esc(ok ? '\n✓ Done.' : '\n✗ Exited with code ' + msg.returncode + '.') +
+            '</span>';
+          out.scrollTop = out.scrollHeight;
+        } else if (msg.file && msg.open_url) {
+          out.innerHTML +=
+            '<a href="' + escAttr(msg.open_url) + '" target="_blank" rel="noopener noreferrer">' +
+            esc(msg.file) +
+            '</a> (' + esc(msg.size_text || 'size unknown') + ')\n';
+          out.scrollTop = out.scrollHeight;
+        } else {
+          out.innerHTML += esc(msg.line) + '\n';
+          out.scrollTop = out.scrollHeight;
+        }
+      };
+
+      activeSource.onerror = () => {
+        activeSource.close();
+        activeSource = null;
+        btn.disabled = false;
+        btn.textContent = 'Show file overview';
+        out.innerHTML += '<span class="t-err">\nConnection error.</span>';
+      };
+    }
+
+    async function loadCsvFile() {
+      const relPath = document.getElementById('csv-path').value.trim();
+      if (!relPath) { alert('Please enter a CSV path.'); return; }
+      try {
+        const url = _addToken('/get-csv?path=' + encodeURIComponent(relPath) +
+          '&columns=' + encodeURIComponent(document.getElementById('csv-columns').value));
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        currentCsv = { path: data.path, headers: data.headers, rows: data.rows, writableColumns: [], mode: 'source', auto_detected: data.auto_detected || [] };
+        renderCsvTable();
+      } catch (err) {
+        alert('Failed to load CSV: ' + err.message);
+      }
+    }
+
+    function renderCsvTable() {
+      if (!currentCsv.headers.length) {
+        document.getElementById('csv-table-wrap').style.display = 'none';
+        return;
+      }
+      const tbl = document.getElementById('csv-table');
+      tbl.innerHTML = '';
+      const thead = document.createElement('thead');
+      const tr = document.createElement('tr');
+      for (const h of currentCsv.headers) {
+        const th = document.createElement('th');
+        th.textContent = h;
+        tr.appendChild(th);
+      }
+      thead.appendChild(tr);
+      tbl.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      for (let i = 0; i < currentCsv.rows.length; i++) {
+        const row = currentCsv.rows[i];
+        const tr = document.createElement('tr');
+        for (let j = 0; j < currentCsv.headers.length; j++) {
+          const td = document.createElement('td');
+          td.textContent = row[j] || '';
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+      tbl.appendChild(tbody);
+      document.getElementById('csv-table-wrap').style.display = '';
+    }
+
+    function initializeTargetFromSource() {
+      if (!currentCsv.headers.length) {
+        alert('Load a source CSV first.');
+        return;
+      }
+      const cols = document.getElementById('status-column-names').value.split(',').map(c => c.trim()).filter(Boolean);
+      const targetPath = document.getElementById('target-file-path').value.trim();
+      if (!targetPath) { alert('Please set a target file path.'); return; }
+      petBids.saveTargetFile();
+    }
+
+    async function loadTargetFile() {
+      const relPath = document.getElementById('target-file-path').value.trim();
+      if (!relPath) return null;
+      try {
+        const res = await fetch(_addToken('/load-target-file?path=' + encodeURIComponent(relPath)));
+        if (!res.ok) return null;
+        const data = await res.json();
+        currentCsv = { path: data.path, headers: data.headers, rows: data.rows, writableColumns: data.headers, mode: 'target', auto_detected: data.auto_detected || [] };
+        renderCsvTable();
+        return true;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    async function saveTargetFile() {
+      const relPath = document.getElementById('target-file-path').value.trim();
+      const cols = document.getElementById('status-column-names').value.split(',').map(c => c.trim()).filter(Boolean);
+      if (!relPath) { alert('Please set a target file path.'); return; }
+      try {
+        const res = await fetch(_addToken('/save-target-file'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: relPath, headers: cols || [], rows: currentCsv.rows || [], status_columns: cols }),
+        });
+        if (!res.ok) throw new Error('Save failed');
+        alert('Target file saved.');
+      } catch (err) {
+        alert('Failed to save: ' + err.message);
+      }
+    }
+
+    function showResetDialog() {
+      document.getElementById('reset-dialog-overlay').style.display = '';
+      document.getElementById('reset-dialog').style.display = '';
+      document.getElementById('reset-target-preview').textContent = document.getElementById('target-file-path').value;
+    }
+
+    function closeResetDialog() {
+      document.getElementById('reset-dialog-overlay').style.display = 'none';
+      document.getElementById('reset-dialog').style.display = 'none';
+      document.getElementById('reset-confirm-checkbox').checked = false;
+      document.getElementById('reset-confirm-btn').disabled = true;
+    }
+
+    function refreshResetConfirmState() {
+      document.getElementById('reset-confirm-btn').disabled = !document.getElementById('reset-confirm-checkbox').checked;
+    }
+
+    async function executeResetTargetFile() {
+      const relPath = document.getElementById('target-file-path').value.trim();
+      const cols = document.getElementById('status-column-names').value.split(',').map(c => c.trim()).filter(Boolean);
+      if (!relPath) return;
+      try {
+        const res = await fetch(_addToken('/reset-target-file'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: relPath, headers: cols, rows: [] }),
+        });
+        if (!res.ok) throw new Error('Reset failed');
+        closeResetDialog();
+        alert('Progress CSV restarted.');
+        await loadTargetFile();
+      } catch (err) {
+        alert('Failed to reset: ' + err.message);
+      }
+    }
+
+    function showMergeDialog() {
+      document.getElementById('merge-dialog-overlay').style.display = '';
+      document.getElementById('merge-dialog').style.display = '';
+    }
+
+    function closeMergeDialog() {
+      document.getElementById('merge-dialog-overlay').style.display = 'none';
+      document.getElementById('merge-dialog').style.display = 'none';
+    }
+
+    async function mergeFileSelected() {
+      const val = document.getElementById('merge-file-select').value;
+      if (val) document.getElementById('merge-file-path').value = val;
+    }
+
+    async function executeMerge() {
+      const targetPath = document.getElementById('target-file-path').value.trim();
+      const completedPath = document.getElementById('merge-file-path').value.trim();
+      if (!targetPath || !completedPath) { alert('Please select both files.'); return; }
+      try {
+        const res = await fetch(_addToken('/merge-completed-sessions'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target_path: targetPath, completed_path: completedPath }),
+        });
+        if (!res.ok) throw new Error('Merge failed');
+        const data = await res.json();
+        closeMergeDialog();
+        alert('Merged ' + data.merged_count + ' rows.');
+        await loadTargetFile();
+      } catch (err) {
+        alert('Failed to merge: ' + err.message);
+      }
+    }
+
+    function refreshEditability() {
+      // Placeholder for compatibility
+    }
+
+    return {
+      switchSubTab,
+      runOverview,
+      loadCsvFile,
+      initializeTargetFromSource,
+      loadTargetFile,
+      saveTargetFile,
+      showResetDialog,
+      closeResetDialog,
+      refreshResetConfirmState,
+      executeResetTargetFile,
+      showMergeDialog,
+      closeMergeDialog,
+      mergeFileSelected,
+      executeMerge,
+      refreshEditability,
+      init: (token) => {
+        _token = token;
+        initializeAndLoad();
+      },
+    };
+  })();
+
+  function tabInit_pet_bids(token) {
+    petBids.init(token);
+  }
+</script>

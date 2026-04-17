@@ -4,12 +4,14 @@ import csv
 import json
 import os
 import re
+from pathlib import Path
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _HELPER_DIR = os.path.join(
     _SCRIPT_DIR, "dcm2bids_helper", "tmp_dcm2bids", "helper"
 )
-CONFIG_FILE = os.path.join(_SCRIPT_DIR, "dcm2bids_config.json")
+_REPO_ROOT = str(Path(_SCRIPT_DIR).resolve().parents[1])
+CONFIG_FILE = os.path.join(_REPO_ROOT, "dcm2bids_config_mr.json")
 _RECODE_CSV = os.path.join(_SCRIPT_DIR, "session_recode.csv")
 
 
@@ -75,7 +77,7 @@ def read_helper_jsons():
 
 
 def load_config():
-    """Load ``dcm2bids_config.json``.  Returns ``None`` if the file is absent."""
+    """Load ``dcm2bids_config_mr.json``.  Returns ``None`` if the file is absent."""
     if not os.path.isfile(CONFIG_FILE):
         return None
     with open(CONFIG_FILE, encoding="utf-8") as fh:
@@ -83,7 +85,7 @@ def load_config():
 
 
 def save_config(data):
-    """Overwrite ``dcm2bids_config.json`` with *data* (pretty-printed JSON)."""
+    """Overwrite ``dcm2bids_config_mr.json`` with *data* (pretty-printed JSON)."""
     with open(CONFIG_FILE, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=4)
 

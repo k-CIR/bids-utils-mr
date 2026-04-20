@@ -55,9 +55,9 @@
 
   <button class="btn" id="raw-btn" onclick="petBids.runRawDataOverview()">Analyze DICOM fields</button>
 
-  <div id="raw-output" style="background:#0d0d0d; border:1px solid #3c3c3c; border-radius:4px; padding:0.8rem 1rem; 
-           white-space:pre-wrap; min-height:10rem; max-height:600px; overflow-y:auto; line-height:1.55; 
-           font-size:0.85rem; color:#c8c8c8; font-family:monospace;">Output will appear here…</div>
+  <div id="raw-output" style="margin-top:1.2rem; background:#0d0d0d; border:1px solid #3c3c3c; border-radius:4px; padding:0.8rem 1rem; 
+           white-space:pre-wrap; min-height:5rem; max-height:440px; overflow-y:auto; line-height:1.55; 
+           font-size:0.87rem; color:#c8c8c8; font-family:monospace;">Output will appear here…</div>
 
   <!-- ── Config builder ── -->
   <div id="pet-config-builder-section" style="display:none; margin-top:1.8rem;">
@@ -103,7 +103,71 @@
 
 <!-- ── Make BIDS ── -->
 <div id="pet-tab-makebids" class="tab-pane">
-  <p class="description">Under development.</p>
+  <p style="margin:0 0 0.4rem; color:#d4d4d4; font-weight:600; font-size:2rem;">3. Run dcm2bids</p>
+  <p class="description">Convert PET DICOM sessions to BIDS format using dcm2bids.</p>
+
+  <label style="font-size:0.85rem; color:#9e9e9e; margin-bottom:0.3rem; display:block;">DICOM input directory</label>
+  <div class="path-row">
+    <span class="path-static" id="pet-bids-root-static">/data/projects/…</span>
+    <span class="path-static">/</span>
+    <input id="pet-bids-dicom-path" class="path-input" type="text" spellcheck="false" value="raw/bmic" />
+  </div>
+
+  <label style="font-size:0.85rem; color:#9e9e9e; margin-bottom:0.3rem; display:block;">BIDS output directory</label>
+  <div class="path-row">
+    <span class="path-static" id="pet-bids-out-static">/data/projects/…</span>
+    <span class="path-static">/</span>
+    <input id="pet-bids-output-path" class="path-input" type="text" spellcheck="false" value="BIDS" />
+  </div>
+
+  <label style="font-size:0.85rem; color:#9e9e9e; margin-bottom:0.3rem; display:block;">Config file</label>
+  <div class="path-row" style="opacity:0.65; cursor:default;">
+    <span class="path-static" id="pet-bids-cfg-root-static">/data/projects/…</span>
+    <span class="path-static">/utils/bids-utils-mr/dcm2bids_config_pet.json</span>
+  </div>
+
+  <div style="display:flex; align-items:center; gap:1.5rem; margin-bottom:1rem; flex-wrap:wrap;">
+    <label style="font-size:0.87rem; color:#9e9e9e; display:flex; align-items:center; gap:0.5rem;">
+      Max parallel workers:
+      <input id="pet-bids-workers" type="number" min="1" max="24" value="8"
+             style="width:4rem; background:#1e1e1e; border:1px solid #444; color:#d4d4d4;
+                    font-family:monospace; font-size:0.87rem; padding:0.2rem 0.4rem;
+                    border-radius:2px; outline:none;" />
+    </label>
+    <label class="force-label" style="margin:0;">
+      <input type="checkbox" id="pet-bids-clobber" />
+      --clobber &nbsp;(overwrite existing BIDS output)
+    </label>
+  </div>
+
+  <button class="btn" id="pet-discover-btn" onclick="petBids.discoverSessions()">Discover sessions</button>
+
+  <div id="pet-bids-sessions-section" style="display:none; margin-top:1.4rem;">
+    <div style="display:flex; align-items:center; gap:0.8rem; margin-bottom:0.5rem; flex-wrap:wrap;">
+      <span style="font-size:0.88rem; color:#9e9e9e;" id="pet-bids-session-count"></span>
+      <button class="btn btn-secondary"
+              style="padding:0.3rem 0.8rem; font-size:0.82rem;"
+              onclick="petBids.bidsSelectAll(true)">Select all</button>
+      <button class="btn btn-secondary"
+              style="padding:0.3rem 0.8rem; font-size:0.82rem;"
+              onclick="petBids.bidsSelectAll(false)">Deselect all</button>
+    </div>
+    <div id="pet-bids-session-table-wrap"
+         style="overflow-x:auto; max-height:320px; overflow-y:auto;
+                border:1px solid #3c3c3c; border-radius:3px;"></div>
+    <div style="margin-top:0.9rem; display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap;">
+      <button class="btn" id="pet-run-bids-btn" disabled>Run dcm2bids</button>
+      <span id="pet-bids-run-status" style="font-size:0.87rem;"></span>
+      <span id="pet-bids-recode-status" style="font-size:0.87rem; margin-left:auto;"></span>
+    </div>
+    <p class="description" style="margin:0.7rem 0 0;">implementation of running pypet2bids with config and recoding coming soon!</p>
+  </div>
+
+  <div id="pet-bids-log"
+       style="display:none; margin-top:1.2rem; background:#0d0d0d; border:1px solid #3c3c3c;
+              border-radius:4px; padding:0.8rem 1rem; white-space:pre-wrap;
+              min-height:10rem; max-height:600px; overflow-y:auto;
+              line-height:1.55; font-size:0.85rem; color:#c8c8c8;"></div>
 </div>
 
 <!-- ── Run PETPrep ── -->
@@ -370,6 +434,13 @@
     let _helperDebug = {};
     const stateMap = new Map();
     let _petHelperRunCompleted = false;
+    let _bidsDiscoveredSessions = [];
+    let _recodeTimer = null;
+    const _SESSION_COLORS = ['#9cdcfe', '#4ec9b0', '#dcdcaa', '#ce9178', '#c586c0', '#569cd6', '#4fc1ff', '#b5cea8'];
+
+    function _sessionColor(idx) {
+      return _SESSION_COLORS[idx % _SESSION_COLORS.length];
+    }
 
     function _stateKey(row) {
       return String(row.series_number) + '|' + row.series_description
@@ -427,6 +498,9 @@
         _projectRoot = petCfg.project_root || '';
         document.getElementById('path-static').textContent = petCfg.project_root;
         document.getElementById('raw-path-static').textContent = petCfg.project_root;
+        document.getElementById('pet-bids-root-static').textContent = petCfg.project_root;
+        document.getElementById('pet-bids-out-static').textContent = petCfg.project_root;
+        document.getElementById('pet-bids-cfg-root-static').textContent = petCfg.project_root;
         if (petCfg.warning) {
           const w = document.getElementById('path-warn');
           w.textContent = '⚠ ' + petCfg.warning;
@@ -988,6 +1062,297 @@
       };
     }
 
+    async function discoverSessions() {
+      const dicomRel = document.getElementById('pet-bids-dicom-path').value.trim();
+      if (!dicomRel) {
+        alert('Enter a DICOM input path first.');
+        return;
+      }
+
+      const btn = document.getElementById('pet-discover-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Discovering…';
+      document.getElementById('pet-bids-run-status').textContent = '';
+      document.getElementById('pet-bids-sessions-section').style.display = 'none';
+
+      if (document.querySelectorAll('#pet-bids-session-table-wrap .bids-recode-input').length > 0) {
+        await _saveRecodeTable();
+      }
+
+      try {
+        const [sesRes, recRes] = await Promise.all([
+          fetch(_addToken('/pet-discover-sessions?dicom_root=' + encodeURIComponent(dicomRel))),
+          fetch(_addToken('/pet-get-recode-table')),
+        ]);
+
+        if (!sesRes.ok) {
+          throw new Error('HTTP ' + sesRes.status);
+        }
+
+        const sesData = await sesRes.json();
+        if (sesData.error) {
+          throw new Error(sesData.error);
+        }
+
+        const recData = recRes.ok ? await recRes.json() : {};
+        _bidsDiscoveredSessions = sesData.sessions || [];
+        renderSessionList(_bidsDiscoveredSessions, recData.recode || {});
+      } catch (e) {
+        document.getElementById('pet-bids-session-count').textContent = 'Error: ' + e.message;
+        document.getElementById('pet-bids-session-table-wrap').innerHTML = '';
+        document.getElementById('pet-bids-sessions-section').style.display = '';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Discover sessions';
+      }
+    }
+
+    function renderSessionList(sessions, recodeMap) {
+      recodeMap = recodeMap || {};
+      const countEl = document.getElementById('pet-bids-session-count');
+      const tableWrap = document.getElementById('pet-bids-session-table-wrap');
+      const section = document.getElementById('pet-bids-sessions-section');
+
+      countEl.textContent = sessions.length + ' session' + (sessions.length !== 1 ? 's' : '') + ' found';
+      if (sessions.length === 0) {
+        tableWrap.innerHTML = '<p style="padding:0.6rem 1rem; color:#9e9e9e; font-size:0.87rem;">No sessions found in that directory.</p>';
+        section.style.display = '';
+        return;
+      }
+
+      let html = '<table class="config-table" style="font-size:0.85rem;">';
+      html += '<thead><tr><th>Label</th><th>Participant</th><th>Recoded participant ID</th>'
+            + '<th>Session</th><th>Recoded session ID</th><th style="text-align:center;">Include</th></tr></thead><tbody>';
+
+      sessions.forEach((s, i) => {
+        const color = _sessionColor(i);
+        const rec = recodeMap[s.label] || {};
+        const rpVal = rec.recoded_participant || '';
+        const rsVal = rec.recoded_session || '';
+        const pPad = s.participant ? s.participant.padStart(3, '0') : '';
+        const sesPad = s.session ? s.session.padStart(2, '0') : '';
+
+        html += '<tr>';
+        html += '<td style="color:' + color + ';">' + esc(s.label) + '</td>';
+        html += '<td>' + esc(s.participant || '') + '</td>';
+        html += '<td style="min-width:10rem;"><input class="tbl-input bids-recode-input" type="text"'
+             +  ' data-label="' + escAttr(s.label) + '" data-field="recoded_participant" data-pad="3"'
+             +  ' value="' + escAttr(rpVal) + '" placeholder="' + escAttr(pPad ? 'keep ' + pPad : 'keep as is') + '"'
+             +  ' oninput="petBids.validateRecodeInput(this)" onblur="petBids.debouncedSaveRecode()" />'
+             +  '<div class="recode-hint"></div></td>';
+        html += '<td>' + esc(s.session || '—') + '</td>';
+        html += '<td style="min-width:10rem;"><input class="tbl-input bids-recode-input" type="text"'
+             +  ' data-label="' + escAttr(s.label) + '" data-field="recoded_session" data-pad="2"'
+             +  ' value="' + escAttr(rsVal) + '" placeholder="' + escAttr(sesPad ? 'keep ' + sesPad : (s.session != null ? 'keep as is' : 'none — add?')) + '"'
+             +  ' oninput="petBids.validateRecodeInput(this)" onblur="petBids.debouncedSaveRecode()" />'
+             +  '<div class="recode-hint"></div></td>';
+        html += '<td style="text-align:center;"><input type="checkbox" class="bids-ses-check" data-label="'
+             +  escAttr(s.label) + '" checked style="accent-color:#0e639c;"></td>';
+        html += '</tr>';
+      });
+
+      html += '</tbody></table>';
+      tableWrap.innerHTML = html;
+      document.querySelectorAll('#pet-bids-session-table-wrap .bids-recode-input').forEach(inp => {
+        if (inp.value) {
+          validateRecodeInput(inp);
+        }
+      });
+      section.style.display = '';
+    }
+
+    function bidsSelectAll(checked) {
+      document.querySelectorAll('#pet-bids-session-table-wrap .bids-ses-check').forEach(cb => {
+        cb.checked = checked;
+      });
+    }
+
+    function validateRecodeInput(input) {
+      const val = input.value.trim();
+      const padLen = parseInt(input.dataset.pad, 10) || 3;
+      const hint = input.nextElementSibling;
+      input.value = val;
+
+      if (!val) {
+        input.style.borderColor = '';
+        if (hint) {
+          hint.textContent = '';
+          hint.style.color = '';
+        }
+        return true;
+      }
+
+      if (!/^\d+$/.test(val)) {
+        input.style.borderColor = '#f48771';
+        if (hint) {
+          hint.textContent = 'Digits only';
+          hint.style.color = '#f48771';
+        }
+        return false;
+      }
+
+      const padded = val.padStart(padLen, '0');
+      if (val !== padded) {
+        input.style.borderColor = '#d7ba7d';
+        if (hint) {
+          hint.textContent = 'Recommended: ' + padded;
+          hint.style.color = '#d7ba7d';
+        }
+      } else {
+        input.style.borderColor = '#4ec9b0';
+        if (hint) {
+          hint.textContent = '';
+          hint.style.color = '';
+        }
+      }
+      return true;
+    }
+
+    function debouncedSaveRecode() {
+      clearTimeout(_recodeTimer);
+      _recodeTimer = setTimeout(_saveRecodeTable, 600);
+    }
+
+    async function _saveRecodeTable() {
+      const recode = {};
+      document.querySelectorAll('#pet-bids-session-table-wrap .bids-recode-input').forEach(inp => {
+        const label = inp.dataset.label;
+        const field = inp.dataset.field;
+        if (!recode[label]) {
+          recode[label] = {};
+        }
+        recode[label][field] = inp.value.trim();
+      });
+
+      try {
+        await fetch(_addToken('/pet-save-recode-table'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ recode }),
+        });
+
+        const el = document.getElementById('pet-bids-recode-status');
+        if (el) {
+          el.innerHTML = '<span class="t-ok">✓ Recode saved</span>';
+          setTimeout(() => { el.innerHTML = ''; }, 2000);
+        }
+      } catch (_) {
+        // Keep recode save failures non-blocking while editing.
+      }
+    }
+
+    async function runDcm2bids() {
+      const dicomRel = document.getElementById('pet-bids-dicom-path').value.trim();
+      const outputRel = document.getElementById('pet-bids-output-path').value.trim();
+      const configRel = 'utils/bids-utils-mr/dcm2bids_config_pet.json';
+      const workers = parseInt(document.getElementById('pet-bids-workers').value, 10) || 8;
+      const clobber = document.getElementById('pet-bids-clobber').checked;
+      const btn = document.getElementById('pet-run-bids-btn');
+      const statusEl = document.getElementById('pet-bids-run-status');
+      const selectedLabels = Array.from(document.querySelectorAll('#pet-bids-session-table-wrap .bids-ses-check:checked')).map(cb => cb.dataset.label);
+
+      if (selectedLabels.length === 0) {
+        statusEl.innerHTML = '<span class="t-err">No sessions selected.</span>';
+        return;
+      }
+
+      const recode = {};
+      let hasErr = false;
+      document.querySelectorAll('#pet-bids-session-table-wrap .bids-recode-input').forEach(inp => {
+        if (!validateRecodeInput(inp)) {
+          hasErr = true;
+        }
+        if (!recode[inp.dataset.label]) {
+          recode[inp.dataset.label] = {};
+        }
+        recode[inp.dataset.label][inp.dataset.field] = inp.value.trim();
+      });
+      if (hasErr) {
+        statusEl.innerHTML = '<span class="t-err">Fix recode errors before running.</span>';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Starting…';
+      statusEl.textContent = '';
+      const logEl = document.getElementById('pet-bids-log');
+      logEl.style.display = '';
+      logEl.innerHTML = '';
+
+      try {
+        const resp = await fetch(_addToken('/pet-run-dcm2bids'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dicom_root: dicomRel,
+            output_dir: outputRel,
+            config_file: configRel,
+            sessions: selectedLabels,
+            max_workers: workers,
+            clobber,
+            recode,
+          }),
+        });
+        const data = await resp.json();
+        if (data.error) {
+          statusEl.innerHTML = '<span class="t-err">✗ ' + esc(data.error) + '</span>';
+          btn.disabled = false;
+          btn.textContent = 'Run dcm2bids';
+          return;
+        }
+        _streamBidsJob(data.job_id, btn, statusEl);
+      } catch (e) {
+        statusEl.innerHTML = '<span class="t-err">✗ ' + esc(e.message) + '</span>';
+        btn.disabled = false;
+        btn.textContent = 'Run dcm2bids';
+      }
+    }
+
+    function _streamBidsJob(jobId, btn, statusEl) {
+      btn.innerHTML = '<span class="spinner"></span> Running…';
+      const logEl = document.getElementById('pet-bids-log');
+      const colorMap = {};
+      _bidsDiscoveredSessions.forEach((s, i) => {
+        colorMap[s.label] = _sessionColor(i);
+      });
+
+      const src = new EventSource(_addToken('/pet-stream-dcm2bids-job?job_id=' + encodeURIComponent(jobId)));
+      src.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        const label = msg.label || '';
+        const color = colorMap[label] || '#c8c8c8';
+        const lbl = label ? '<span style="color:' + color + ';">[' + esc(label) + ']</span> ' : '';
+
+        if (msg.type === 'start') {
+          logEl.innerHTML += '<span style="color:' + color + ';">[' + esc(label) + '] Starting…</span>\n';
+        } else if (msg.type === 'line') {
+          logEl.innerHTML += lbl + esc(msg.text) + '\n';
+        } else if (msg.type === 'exit') {
+          logEl.innerHTML += lbl + '<span class="' + (msg.returncode === 0 ? 't-ok' : 't-err') + '">' + (msg.returncode === 0 ? '✓ Done (exit 0)' : '✗ Exited with code ' + msg.returncode) + '</span>\n';
+        } else if (msg.type === 'error') {
+          logEl.innerHTML += '<span class="t-err">' + lbl + esc(msg.text || 'Unknown error') + '</span>\n';
+        } else if (msg.type === 'done') {
+          logEl.innerHTML += '<span class="t-ok">\n✓ All sessions complete.</span>\n';
+          src.close();
+          btn.disabled = false;
+          btn.textContent = 'Run dcm2bids';
+          statusEl.innerHTML = '<span class="t-ok">✓ Batch complete</span>';
+        }
+        logEl.scrollTop = logEl.scrollHeight;
+      };
+
+      src.onerror = () => {
+        src.close();
+        btn.disabled = false;
+        btn.textContent = 'Run dcm2bids';
+        if (!logEl.textContent.includes('All sessions complete')) {
+          logEl.innerHTML += '<span class="t-err">Connection lost.</span>\n';
+          statusEl.innerHTML = '<span class="t-err">✗ Stream disconnected</span>';
+        }
+        logEl.scrollTop = logEl.scrollHeight;
+      };
+    }
+
     async function loadCsvFile() {
       const relPath = document.getElementById('csv-path').value.trim();
       if (!relPath) { alert('Please enter a CSV path.'); return; }
@@ -1166,6 +1531,11 @@
       generateConfig,
       appendToConfig,
       loadConfigToTable,
+      discoverSessions,
+      bidsSelectAll,
+      validateRecodeInput,
+      debouncedSaveRecode,
+      runDcm2bids,
       loadCsvFile,
       initializeTargetFromSource,
       loadTargetFile,

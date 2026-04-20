@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """PET config builder helpers based on dcm2bids helper output."""
+import csv
 import json
 import os
 import re
@@ -11,6 +12,7 @@ _HELPER_DIR = os.path.join(
 )
 _REPO_ROOT = str(Path(_SCRIPT_DIR).resolve().parents[1])
 CONFIG_FILE = os.path.join(_REPO_ROOT, "dcm2bids_config_pet.json")
+_RECODE_CSV = os.path.join(_SCRIPT_DIR, "session_recode.csv")
 
 
 def read_helper_jsons():
@@ -78,3 +80,35 @@ def load_config():
 def save_config(data):
     with open(CONFIG_FILE, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=4)
+
+
+def load_recode_table():
+    """Return recode dict keyed by folder label."""
+    result = {}
+    if not os.path.isfile(_RECODE_CSV):
+        return result
+    with open(_RECODE_CSV, newline="", encoding="utf-8") as fh:
+        for row in csv.DictReader(fh):
+            label = row.get("folder_label", "").strip()
+            if label:
+                result[label] = {
+                    "recoded_participant": row.get("recoded_participant", "").strip(),
+                    "recoded_session": row.get("recoded_session", "").strip(),
+                }
+    return result
+
+
+def save_recode_table(recode_dict):
+    """Write recode table to CSV sorted by folder label."""
+    with open(_RECODE_CSV, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(
+            fh,
+            fieldnames=["folder_label", "recoded_participant", "recoded_session"],
+        )
+        writer.writeheader()
+        for label, rec in sorted(recode_dict.items()):
+            writer.writerow({
+                "folder_label": label,
+                "recoded_participant": rec.get("recoded_participant") or "",
+                "recoded_session": rec.get("recoded_session") or "",
+            })

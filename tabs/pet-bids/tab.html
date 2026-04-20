@@ -17,7 +17,7 @@
     A default path is loaded automatically.
   </p>
 
-  <div id="path-warn" class="warn" style="display:none;"></div>
+  <div id="pet-path-warn" class="warn" style="display:none;"></div>
 
   <div class="path-row">
     <span class="path-static" id="path-static">/data/projects/…</span>
@@ -39,7 +39,7 @@
     fields that can be used to organize your data. The first session in your data is selected by default.
   </p>
 
-  <div id="raw-path-warn" class="warn" style="display:none;"></div>
+  <div id="pet-raw-path-warn" class="warn" style="display:none;"></div>
 
   <div class="path-row">
     <span class="path-static" id="raw-path-static">/data/projects/…</span>
@@ -502,12 +502,9 @@
         document.getElementById('pet-bids-out-static').textContent = petCfg.project_root;
         document.getElementById('pet-bids-cfg-root-static').textContent = petCfg.project_root;
         if (petCfg.warning) {
-          const w = document.getElementById('path-warn');
+          const w = document.getElementById('pet-raw-path-warn');
           w.textContent = '⚠ ' + petCfg.warning;
           w.style.display = '';
-          const rawWarn = document.getElementById('raw-path-warn');
-          rawWarn.textContent = '⚠ ' + petCfg.warning;
-          rawWarn.style.display = '';
         }
         if (petCfg.default_path) {
           const rawDisplayPath = _normalizeDisplayPath(petCfg.default_path);
@@ -518,7 +515,7 @@
           document.getElementById('overview-path').value = htmlDisplayPath;
         }
         if (petCfg.html_warning) {
-          const w = document.getElementById('path-warn');
+          const w = document.getElementById('pet-path-warn');
           w.textContent = '⚠ ' + petCfg.html_warning;
           w.style.display = '';
         }

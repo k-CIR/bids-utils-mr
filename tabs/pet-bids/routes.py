@@ -21,6 +21,15 @@ TAB_METADATA = {
 
 _TAB_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
+def _detect_project_root(script_dir):
+    """Return /data/projects/<project> for nested repo locations."""
+    resolved = os.path.realpath(script_dir)
+    match = re.match(r"^(/data/projects/[^/]+)(?:/|$)", resolved)
+    if match:
+        return match.group(1)
+    return os.path.realpath(os.path.join(script_dir, ".."))
+
 _CFG_PATH = os.path.join(_TAB_DIR, "config_builder.py")
 _CFG_SPEC = importlib.util.spec_from_file_location("pet_bids_config_builder", _CFG_PATH)
 config_builder = importlib.util.module_from_spec(_CFG_SPEC)
@@ -39,8 +48,7 @@ _PET_RUNNER_SPEC = importlib.util.spec_from_file_location("pet2bids_runner", _PE
 pet2bids_runner = importlib.util.module_from_spec(_PET_RUNNER_SPEC)
 _PET_RUNNER_SPEC.loader.exec_module(pet2bids_runner)
 
-_BIDS_UTILS_DIR = os.path.dirname(os.path.dirname(_TAB_DIR))
-PROJECT_ROOT = os.path.realpath(os.path.join(_BIDS_UTILS_DIR, "..", ".."))
+PROJECT_ROOT = _detect_project_root(_TAB_DIR)
 _RAW_PET_HELPER_DIR = os.path.join(PROJECT_ROOT, "raw", "bmic")
 _OUTPUT_DIR = os.path.join(_TAB_DIR, "dcm2bids_helper")
 

@@ -416,23 +416,30 @@ def _get_csv_browser_config():
 
 def _iter_raw_pet_overview_lines(base_dir):
     found_any = False
-    for root, _, files in os.walk(base_dir):
-        for filename in sorted(files):
-            if not filename.lower().endswith(".html"):
-                continue
+    try:
+        entries = sorted(os.listdir(base_dir))
+    except OSError:
+        entries = []
 
-            found_any = True
-            file_path = os.path.join(root, filename)
-            rel_path = os.path.relpath(file_path, PROJECT_ROOT)
-            try:
-                size = os.path.getsize(file_path)
-            except OSError:
-                size = -1
-            yield {
-                "file": filename,
-                "rel_path": rel_path,
-                "size": size,
-            }
+    for filename in entries:
+        if not filename.lower().endswith(".html"):
+            continue
+
+        file_path = os.path.join(base_dir, filename)
+        if not os.path.isfile(file_path):
+            continue
+
+        found_any = True
+        rel_path = os.path.relpath(file_path, PROJECT_ROOT)
+        try:
+            size = os.path.getsize(file_path)
+        except OSError:
+            size = -1
+        yield {
+            "file": filename,
+            "rel_path": rel_path,
+            "size": size,
+        }
 
     if not found_any:
         yield "No .html files found."

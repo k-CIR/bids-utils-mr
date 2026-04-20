@@ -20,7 +20,7 @@
   <div id="pet-path-warn" class="warn" style="display:none;"></div>
 
   <div class="path-row">
-    <span class="path-static" id="path-static">/data/projects/…</span>
+    <span class="path-static" id="pet-path-static">/data/projects/…</span>
     <span class="path-static">/</span>
     <input id="overview-path" class="path-input" type="text"
            spellcheck="false" placeholder="BIDS/derivatives/petprep/..." />
@@ -443,11 +443,22 @@
     }
 
     function _addToken(url) {
-      if (!_token) return url;
       if (!url || typeof url !== 'string') return url;
       if (!url.startsWith('/')) return url;
       if (url.includes('token=')) return url;
-      return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(_token);
+
+      // Try all known token sources so requests keep working across tab reloads.
+      const urlToken = new URLSearchParams(window.location.search).get('token');
+      const globalToken = (typeof authToken !== 'undefined') ? authToken : null;
+      const token = _token || urlToken || globalToken;
+      if (!token) {
+        if (typeof addTokenToUrl === 'function') {
+          return addTokenToUrl(url);
+        }
+        return url;
+      }
+
+      return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token);
     }
 
     function esc(s) {
@@ -523,12 +534,16 @@
         document.getElementById('status-column-names').value = defaultTracking.join(', ');
 
         const petCfgResp = await fetch(_addToken('/pet-get-config'));
+        if (petCfgResp.status === 401 && window._handleAuthError) {
+          window._handleAuthError();
+          return;
+        }
         if (!petCfgResp.ok) {
-          throw new Error('Failed to load PET defaults');
+          throw new Error('Failed to load PET defaults (HTTP ' + petCfgResp.status + ')');
         }
         const petCfg = await petCfgResp.json();
         _projectRoot = _normalizeRootPath(petCfg.project_root || '');
-        document.getElementById('path-static').textContent = _projectRoot;
+        document.getElementById('pet-path-static').textContent = _projectRoot;
         document.getElementById('raw-path-static').textContent = _projectRoot;
         document.getElementById('pet-bids-root-static').textContent = _projectRoot;
         document.getElementById('pet-bids-out-static').textContent = _projectRoot;
@@ -552,7 +567,15 @@
           w.style.display = '';
         }
 
-        const csvCfg = await fetch(_addToken('/get-csv-config')).then(r => r.json());
+        const csvResp = await fetch(_addToken('/get-csv-config'));
+        if (csvResp.status === 401 && window._handleAuthError) {
+          window._handleAuthError();
+          return;
+        }
+        if (!csvResp.ok) {
+          throw new Error('Failed to load CSV defaults (HTTP ' + csvResp.status + ')');
+        }
+        const csvCfg = await csvResp.json();
         const csvRoot = _normalizeRootPath(csvCfg.project_root || '');
         document.getElementById('csv-path-static').textContent = csvRoot;
         document.getElementById('target-path-static').textContent = csvRoot;
@@ -566,7 +589,19 @@
           document.getElementById('target-file-path').value = csvCfg.default_csv.replace(/[^/]*$/, 'progress.csv');
         }
         renderCsvFileList(csvCfg.csv_files || []);
-      } catch (_) { /* ignore */ }
+      } catch (err) {
+        const msg = (err && err.message) ? err.message : 'Failed to load PET tab defaults.';
+        const warnEls = [
+          document.getElementById('pet-path-warn'),
+          document.getElementById('pet-raw-path-warn'),
+          document.getElementById('csv-warn'),
+        ].filter(Boolean);
+        for (const el of warnEls) {
+          el.textContent = '⚠ ' + msg;
+          el.style.display = '';
+        }
+        console.error('PET tab initialization failed:', err);
+      }
     }
 
     async function loadHelperSummary(prePopulate) {
@@ -1595,7 +1630,8 @@
       loadConfigEditor,
       saveConfigEditor,
       init: (token) => {
-        _token = token;
+        const urlToken = new URLSearchParams(window.location.search).get('token');
+        _token = token || urlToken || null;
         initializeAndLoad();
         loadHelperSummary(true);
       },

@@ -106,6 +106,15 @@ def _find_available_port(start_port=8080, max_attempts=10):
 _GET_ROUTES  = {}   # path -> handler(h, query_params)
 _POST_ROUTES = {}   # path -> handler(h, body_dict)
 _TABS        = []   # list of TAB_METADATA dicts, sorted by "order"
+_PROJECT_ROOT = os.path.realpath(os.path.join(_SCRIPT_DIR, "..", ".."))
+
+
+def _tab_is_visible(tab):
+    required_path = tab.get("requires_path")
+    if not required_path:
+        return True
+    required_abs = os.path.realpath(os.path.join(_PROJECT_ROOT, required_path))
+    return os.path.isdir(required_abs)
 
 
 def _discover_tabs():
@@ -165,7 +174,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         # ── Built-in infrastructure endpoints ──
         if path == '/api/tabs':
-            self._send_json(_TABS)
+            self._send_json([tab for tab in _TABS if _tab_is_visible(tab)])
             return
 
         if path == '/tab-content':

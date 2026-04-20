@@ -12,7 +12,7 @@ _HELPER_DIR = os.path.join(
 )
 _REPO_ROOT = str(Path(_SCRIPT_DIR).resolve().parents[1])
 CONFIG_FILE = os.path.join(_REPO_ROOT, "dcm2bids_config_mr.json")
-_RECODE_CSV = os.path.join(_SCRIPT_DIR, "session_recode.csv")
+_RECODE_CSV = os.path.join(_SCRIPT_DIR, "sessions_recode_mr.csv")
 
 
 def read_helper_jsons():
@@ -118,7 +118,7 @@ def load_recode_table():
 
 
 def save_recode_table(recode_dict):
-    """Write *recode_dict* to session_recode.csv (sorted by label)."""
+    """Write *recode_dict* to sessions_recode_mr.csv (sorted by label)."""
     with open(_RECODE_CSV, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(
             fh,

@@ -28,7 +28,8 @@ def _detect_project_root(script_dir):
     match = re.match(r"^(/data/projects/[^/]+)(?:/|$)", resolved)
     if match:
         return match.group(1)
-    return os.path.realpath(os.path.join(script_dir, ".."))
+    # Fallback: tab dir is <project>/bids-utils-mr/tabs/<tab>
+    return os.path.realpath(os.path.join(script_dir, "..", "..", ".."))
 
 _CFG_PATH = os.path.join(_TAB_DIR, "config_builder.py")
 _CFG_SPEC = importlib.util.spec_from_file_location("pet_bids_config_builder", _CFG_PATH)
@@ -52,7 +53,7 @@ PROJECT_ROOT = _detect_project_root(_TAB_DIR)
 _RAW_PET_HELPER_DIR = os.path.join(PROJECT_ROOT, "raw", "bmic")
 _OUTPUT_DIR = os.path.join(_TAB_DIR, "dcm2bids_helper")
 
-_CSV_RAW_PET_DIR = os.path.join(PROJECT_ROOT, "BIDS_pet")
+_CSV_RAW_PET_DIR = os.path.join(PROJECT_ROOT, "BIDS")
 _DEFAULT_PET_DATA_DIR = os.path.join(PROJECT_ROOT, "BIDS")
 _DEFAULT_PETPREP_HTML_DIR = os.path.join(PROJECT_ROOT, "BIDS", "derivatives", "petprep")
 
@@ -73,6 +74,7 @@ def _split_path_list(value):
 _RAW_PET_DIR = _resolve_config_path(os.environ.get("BIDS_UTILS_PET_DATA_DIR"), _DEFAULT_PET_DATA_DIR)
 _CSV_DERIVATIVES_DIR_CANDIDATES = [
     os.path.join(_CSV_RAW_PET_DIR, "derivatives"),
+    os.path.join(PROJECT_ROOT, "BIDS_pet", "derivatives"),
     os.path.join(PROJECT_ROOT, "derivatives"),
 ]
 _PET_DERIVATIVES_DIR_CANDIDATES = [

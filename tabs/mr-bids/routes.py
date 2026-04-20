@@ -21,7 +21,8 @@ def _detect_project_root(script_dir):
     match = re.match(r"^(/data/projects/[^/]+)(?:/|$)", resolved)
     if match:
         return match.group(1)
-    return os.path.realpath(os.path.join(script_dir, ".."))
+    # Fallback: tab dir is <project>/bids-utils-mr/tabs/<tab>
+    return os.path.realpath(os.path.join(script_dir, "..", "..", ".."))
 
 _CFG_PATH = os.path.join(_TAB_DIR, "config_builder.py")
 _CFG_SPEC = importlib.util.spec_from_file_location("mr_bids_config_builder", _CFG_PATH)

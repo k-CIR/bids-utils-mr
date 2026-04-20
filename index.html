@@ -308,6 +308,14 @@
         return;
       }
 
+      if (!tabs.length) {
+        tabBar.innerHTML = '';
+        container.innerHTML =
+          '<p class="warn">⚠ No BIDS tabs are available for this project. ' +
+          'Create <code>raw/mri</code> to show MR BIDS and <code>raw/pet</code> to show PET BIDS.</p>';
+        return;
+      }
+
       for (const [i, tab] of tabs.entries()) {
         // Tab button
         const btn = document.createElement('button');

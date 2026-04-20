@@ -16,6 +16,7 @@ TAB_METADATA = {
     "id": "pet-bids",
     "label": "PET BIDS",
     "order": 1,
+    "requires_path": "raw/pet",
 }
 
 _TAB_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -27,6 +28,11 @@ _CFG_SPEC.loader.exec_module(config_builder)
 _LOCAL_CONFIG_FILE = os.path.realpath(os.path.join(_TAB_DIR, "..", "..", "dcm2bids_config_pet.json"))
 if os.path.realpath(getattr(config_builder, "CONFIG_FILE", _LOCAL_CONFIG_FILE)) != _LOCAL_CONFIG_FILE:
     config_builder.CONFIG_FILE = _LOCAL_CONFIG_FILE
+
+_RUNNER_PATH = os.path.join(_TAB_DIR, "bids_runner.py")
+_RUNNER_SPEC = importlib.util.spec_from_file_location("pet_bids_runner", _RUNNER_PATH)
+bids_runner = importlib.util.module_from_spec(_RUNNER_SPEC)
+_RUNNER_SPEC.loader.exec_module(bids_runner)
 
 _BIDS_UTILS_DIR = os.path.dirname(os.path.dirname(_TAB_DIR))
 PROJECT_ROOT = os.path.realpath(os.path.join(_BIDS_UTILS_DIR, "..", ".."))
@@ -490,6 +496,137 @@ def _handle_get_helper_summary(h, params):
 def _handle_get_bids_config(h, params):
     cfg = config_builder.load_config()
     h._send_json({"config": cfg})
+
+
+def _handle_discover_sessions(h, params):
+    dicom_root = params.get("dicom_root", [None])[0]
+    if not dicom_root:
+        h.send_error(400, "Missing dicom_root parameter")
+        return
+
+    full_root = _resolve_project_path(dicom_root)
+    if not full_root:
+        h.send_error(403, "Path outside project root")
+        return
+
+    sessions = bids_runner.discover_sessions(full_root)
+    h._send_json({"sessions": sessions})
+
+
+def _handle_get_recode_table(h, params):
+    h._send_json({"recode": config_builder.load_recode_table()})
+
+
+def _handle_save_recode_table(h, body):
+    recode = body.get("recode") if isinstance(body, dict) else None
+    if not isinstance(recode, dict):
+        h.send_error(400, "Missing recode dict")
+        return
+
+    cleaned = {}
+    for label, rec in recode.items():
+        if not isinstance(rec, dict):
+            continue
+        rp = str(rec.get("recoded_participant") or "").strip()
+        rs = str(rec.get("recoded_session") or "").strip()
+        if rp and not re.match(r"^\d+$", rp):
+            h.send_error(400, f"Invalid recoded_participant: {rp}")
+            return
+        if rs and not re.match(r"^\d+$", rs):
+            h.send_error(400, f"Invalid recoded_session: {rs}")
+            return
+        cleaned[label] = {"recoded_participant": rp, "recoded_session": rs}
+
+    config_builder.save_recode_table(cleaned)
+    h._send_json({"ok": True})
+
+
+def _handle_run_dcm2bids(h, body):
+    try:
+        dicom_root_rel = body.get("dicom_root")
+        output_rel = body.get("output_dir")
+        config_rel = body.get("config_file")
+        selected = body.get("sessions")
+        max_workers = int(body.get("max_workers", 8))
+        clobber = bool(body.get("clobber", False))
+    except (TypeError, ValueError):
+        h.send_error(400, "Invalid parameters")
+        return
+
+    if not all([dicom_root_rel, output_rel, config_rel]):
+        h.send_error(400, "Missing required parameters")
+        return
+
+    max_workers = max(1, min(max_workers, 24))
+
+    dicom_root = _resolve_project_path(dicom_root_rel)
+    output_dir = _resolve_project_path(output_rel)
+    config_file = _resolve_project_path(config_rel)
+    if not dicom_root or not output_dir or not config_file:
+        h.send_error(403, "Path outside project root")
+        return
+
+    if not os.path.isfile(config_file):
+        h._send_json({"error": "config_not_found"})
+        return
+
+    all_sessions = bids_runner.discover_sessions(dicom_root)
+    if selected:
+        selected_set = set(selected)
+        sessions = [s for s in all_sessions if s["label"] in selected_set]
+    else:
+        sessions = all_sessions
+
+    recode = body.get("recode") or {}
+    if isinstance(recode, dict) and recode:
+        recoded = []
+        for s in sessions:
+            rec = recode.get(s["label"], {})
+            rp = str(rec.get("recoded_participant") or "").strip()
+            rs = str(rec.get("recoded_session") or "").strip()
+            if (rp and not re.match(r"^\d+$", rp)) or (rs and not re.match(r"^\d+$", rs)):
+                h._send_json({"error": f"Invalid recode values for {s['label']}"})
+                return
+            ns = dict(s)
+            if rp:
+                ns["participant"] = rp
+            if rs:
+                ns["session"] = rs
+            recoded.append(ns)
+        sessions = recoded
+
+    if not sessions:
+        h._send_json({"error": "no_sessions"})
+        return
+
+    try:
+        job_id = bids_runner.start_conversion(
+            sessions, dicom_root, output_dir, config_file, max_workers, clobber
+        )
+        h._send_json({"job_id": job_id})
+    except RuntimeError as exc:
+        h._send_json({"error": str(exc)})
+
+
+def _handle_stream_dcm2bids_job(h, params):
+    job_id = params.get("job_id", [None])[0]
+    if not job_id:
+        h.send_error(400, "Missing job_id")
+        return
+
+    h.send_response(200)
+    h.send_header("Content-Type", "text/event-stream")
+    h.send_header("Cache-Control", "no-cache")
+    h.send_header("Connection", "keep-alive")
+    h.end_headers()
+
+    try:
+        for entry in bids_runner.stream_job(job_id):
+            _emit_sse(h, entry)
+            if entry.get("type") == "done":
+                break
+    except (BrokenPipeError, ConnectionResetError):
+        pass
 
 
 def _handle_save_bids_config(h, body):
@@ -1029,6 +1166,9 @@ def register(get_routes, post_routes):
     get_routes["/pet-get-config"] = _handle_get_config
     get_routes["/pet-get-helper-summary"] = _handle_get_helper_summary
     get_routes["/pet-get-bids-config"] = _handle_get_bids_config
+    get_routes["/pet-discover-sessions"] = _handle_discover_sessions
+    get_routes["/pet-get-recode-table"] = _handle_get_recode_table
+    get_routes["/pet-stream-dcm2bids-job"] = _handle_stream_dcm2bids_job
     get_routes["/run-dcm2bids-helper-pet"] = _handle_run_dcm2bids_helper_pet
     get_routes["/raw-pet-overview"] = _handle_raw_pet_overview
     get_routes["/open-html"] = _handle_open_html
@@ -1040,6 +1180,8 @@ def register(get_routes, post_routes):
 
     post_routes["/update-csv-cell"] = _post_wrapper(_post_update_csv_cell)
     post_routes["/pet-save-bids-config"] = _post_wrapper(_handle_save_bids_config)
+    post_routes["/pet-save-recode-table"] = _post_wrapper(_handle_save_recode_table)
+    post_routes["/pet-run-dcm2bids"] = _post_wrapper(_handle_run_dcm2bids)
     post_routes["/save-target-file"] = _post_wrapper(_post_save_target_file)
     post_routes["/reset-target-file"] = _post_wrapper(_post_reset_target_file)
     post_routes["/merge-completed-sessions"] = _post_wrapper(_post_merge_completed_sessions)

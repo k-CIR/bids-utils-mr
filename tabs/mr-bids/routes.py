@@ -32,6 +32,7 @@ TAB_METADATA = {
     "id":    "mr-bids",
     "label": "MR BIDS",
     "order": 0,
+    "requires_path": "raw/mri",
 }
 
 # ── Paths ─────────────────────────────────────────────────────────────────────

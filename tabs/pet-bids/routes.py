@@ -16,7 +16,7 @@ TAB_METADATA = {
     "id": "pet-bids",
     "label": "PET BIDS",
     "order": 1,
-    "requires_path": "raw/pet",
+    "requires_path": "raw/bmic",
 }
 
 _TAB_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -33,6 +33,11 @@ _RUNNER_PATH = os.path.join(_TAB_DIR, "bids_runner.py")
 _RUNNER_SPEC = importlib.util.spec_from_file_location("pet_bids_runner", _RUNNER_PATH)
 bids_runner = importlib.util.module_from_spec(_RUNNER_SPEC)
 _RUNNER_SPEC.loader.exec_module(bids_runner)
+
+_PET_RUNNER_PATH = os.path.join(_TAB_DIR, "pet2bids_runner.py")
+_PET_RUNNER_SPEC = importlib.util.spec_from_file_location("pet2bids_runner", _PET_RUNNER_PATH)
+pet2bids_runner = importlib.util.module_from_spec(_PET_RUNNER_SPEC)
+_PET_RUNNER_SPEC.loader.exec_module(pet2bids_runner)
 
 _BIDS_UTILS_DIR = os.path.dirname(os.path.dirname(_TAB_DIR))
 PROJECT_ROOT = os.path.realpath(os.path.join(_BIDS_UTILS_DIR, "..", ".."))
@@ -600,7 +605,7 @@ def _handle_run_dcm2bids(h, body):
         return
 
     try:
-        job_id = bids_runner.start_conversion(
+        job_id = pet2bids_runner.start_conversion(
             sessions, dicom_root, output_dir, config_file, max_workers, clobber
         )
         h._send_json({"job_id": job_id})
@@ -621,7 +626,7 @@ def _handle_stream_dcm2bids_job(h, params):
     h.end_headers()
 
     try:
-        for entry in bids_runner.stream_job(job_id):
+        for entry in pet2bids_runner.stream_job(job_id):
             _emit_sse(h, entry)
             if entry.get("type") == "done":
                 break

@@ -103,8 +103,8 @@
 
 <!-- ── Make BIDS ── -->
 <div id="pet-tab-makebids" class="tab-pane">
-  <p style="margin:0 0 0.4rem; color:#d4d4d4; font-weight:600; font-size:2rem;">3. Run dcm2bids</p>
-  <p class="description">Convert PET DICOM sessions to BIDS format using dcm2bids.</p>
+  <p style="margin:0 0 0.4rem; color:#d4d4d4; font-weight:600; font-size:2rem;">3. Run PET BIDS</p>
+  <p class="description">Convert PET DICOM sessions to BIDS format through the PET adapter and container-backed runner.</p>
 
   <label style="font-size:0.85rem; color:#9e9e9e; margin-bottom:0.3rem; display:block;">DICOM input directory</label>
   <div class="path-row">
@@ -156,11 +156,11 @@
          style="overflow-x:auto; max-height:320px; overflow-y:auto;
                 border:1px solid #3c3c3c; border-radius:3px;"></div>
     <div style="margin-top:0.9rem; display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap;">
-      <button class="btn" id="pet-run-bids-btn" disabled>Run dcm2bids</button>
+      <button class="btn" id="pet-run-bids-btn" onclick="petBids.runDcm2bids()">Run PET BIDS</button>
       <span id="pet-bids-run-status" style="font-size:0.87rem;"></span>
       <span id="pet-bids-recode-status" style="font-size:0.87rem; margin-left:auto;"></span>
     </div>
-    <p class="description" style="margin:0.7rem 0 0;">implementation of running pypet2bids with config and recoding coming soon!</p>
+    <p class="description" style="margin:0.7rem 0 0;">PET config files now feed an adapter-backed runner. The actual conversion still depends on the PET container runtime.</p>
   </div>
 
   <div id="pet-bids-log"
@@ -1297,14 +1297,14 @@
         if (data.error) {
           statusEl.innerHTML = '<span class="t-err">✗ ' + esc(data.error) + '</span>';
           btn.disabled = false;
-          btn.textContent = 'Run dcm2bids';
+          btn.textContent = 'Run PET BIDS';
           return;
         }
         _streamBidsJob(data.job_id, btn, statusEl);
       } catch (e) {
         statusEl.innerHTML = '<span class="t-err">✗ ' + esc(e.message) + '</span>';
         btn.disabled = false;
-        btn.textContent = 'Run dcm2bids';
+        btn.textContent = 'Run PET BIDS';
       }
     }
 
@@ -1335,7 +1335,7 @@
           logEl.innerHTML += '<span class="t-ok">\n✓ All sessions complete.</span>\n';
           src.close();
           btn.disabled = false;
-          btn.textContent = 'Run dcm2bids';
+          btn.textContent = 'Run PET BIDS';
           statusEl.innerHTML = '<span class="t-ok">✓ Batch complete</span>';
         }
         logEl.scrollTop = logEl.scrollHeight;
@@ -1344,7 +1344,7 @@
       src.onerror = () => {
         src.close();
         btn.disabled = false;
-        btn.textContent = 'Run dcm2bids';
+        btn.textContent = 'Run PET BIDS';
         if (!logEl.textContent.includes('All sessions complete')) {
           logEl.innerHTML += '<span class="t-err">Connection lost.</span>\n';
           statusEl.innerHTML = '<span class="t-err">✗ Stream disconnected</span>';

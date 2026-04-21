@@ -17,10 +17,10 @@
     A default path is loaded automatically.
   </p>
 
-  <div id="path-warn" class="warn" style="display:none;"></div>
+  <div id="pet-path-warn" class="warn" style="display:none;"></div>
 
   <div class="path-row">
-    <span class="path-static" id="path-static">/data/projects/…</span>
+    <span class="path-static" id="pet-path-static">/data/projects/…</span>
     <span class="path-static">/</span>
     <input id="overview-path" class="path-input" type="text"
            spellcheck="false" placeholder="BIDS/derivatives/petprep/..." />
@@ -39,7 +39,7 @@
     fields that can be used to organize your data. The first session in your data is selected by default.
   </p>
 
-  <div id="raw-path-warn" class="warn" style="display:none;"></div>
+  <div id="pet-raw-path-warn" class="warn" style="display:none;"></div>
 
   <div class="path-row">
     <span class="path-static" id="raw-path-static">/data/projects/…</span>
@@ -103,8 +103,8 @@
 
 <!-- ── Make BIDS ── -->
 <div id="pet-tab-makebids" class="tab-pane">
-  <p style="margin:0 0 0.4rem; color:#d4d4d4; font-weight:600; font-size:2rem;">3. Run dcm2bids</p>
-  <p class="description">Convert PET DICOM sessions to BIDS format using dcm2bids.</p>
+  <p style="margin:0 0 0.4rem; color:#d4d4d4; font-weight:600; font-size:2rem;">3. Run PET BIDS</p>
+  <p class="description">Convert PET DICOM sessions to BIDS format through the PET adapter and container-backed runner.</p>
 
   <label style="font-size:0.85rem; color:#9e9e9e; margin-bottom:0.3rem; display:block;">DICOM input directory</label>
   <div class="path-row">
@@ -123,7 +123,7 @@
   <label style="font-size:0.85rem; color:#9e9e9e; margin-bottom:0.3rem; display:block;">Config file</label>
   <div class="path-row" style="opacity:0.65; cursor:default;">
     <span class="path-static" id="pet-bids-cfg-root-static">/data/projects/…</span>
-    <span class="path-static">/utils/bids-utils-mr/dcm2bids_config_pet.json</span>
+    <span class="path-static">/bids-utils-mr/dcm2bids_config_pet.json</span>
   </div>
 
   <div style="display:flex; align-items:center; gap:1.5rem; margin-bottom:1rem; flex-wrap:wrap;">
@@ -156,11 +156,11 @@
          style="overflow-x:auto; max-height:320px; overflow-y:auto;
                 border:1px solid #3c3c3c; border-radius:3px;"></div>
     <div style="margin-top:0.9rem; display:flex; align-items:center; gap:0.8rem; flex-wrap:wrap;">
-      <button class="btn" id="pet-run-bids-btn" disabled>Run dcm2bids</button>
+      <button class="btn" id="pet-run-bids-btn" onclick="petBids.runDcm2bids()">Run PET BIDS</button>
       <span id="pet-bids-run-status" style="font-size:0.87rem;"></span>
       <span id="pet-bids-recode-status" style="font-size:0.87rem; margin-left:auto;"></span>
     </div>
-    <p class="description" style="margin:0.7rem 0 0;">implementation of running pypet2bids with config and recoding coming soon!</p>
+    <p class="description" style="margin:0.7rem 0 0;">PET config files now feed an adapter-backed runner. The actual conversion still depends on the PET container runtime.</p>
   </div>
 
   <div id="pet-bids-log"
@@ -188,7 +188,7 @@
     <span class="path-static" id="csv-path-static">/data/projects/…</span>
     <span class="path-static">/</span>
     <input id="csv-path" class="path-input" type="text"
-           spellcheck="false" placeholder="BIDS_pet/derivatives/your_file.csv" />
+          spellcheck="false" placeholder="BIDS/derivatives/your_file.csv" />
   </div>
 
   <div class="controls-row">
@@ -212,7 +212,7 @@
       <span class="path-static" id="target-path-static">/data/projects/…</span>
       <span class="path-static">/</span>
       <input id="target-file-path" class="path-input" type="text"
-             spellcheck="false" placeholder="BIDS_pet/derivatives/progress.csv" />
+              spellcheck="false" placeholder="BIDS/derivatives/progress.csv" />
     </div>
     <div class="controls-row">
       <button class="btn" id="load-target-btn" onclick="petBids.loadTargetFile()">Load target</button>
@@ -253,7 +253,7 @@
     </label>
     <div class="path-row" style="margin-bottom:0.8rem;">
       <span class="path-static">File:</span>
-      <input id="merge-file-path" class="path-input" type="text" spellcheck="false" placeholder="BIDS_pet/derivatives/completed.csv" />
+      <input id="merge-file-path" class="path-input" type="text" spellcheck="false" placeholder="BIDS/derivatives/completed.csv" />
     </div>
     <div style="display:flex; gap:0.6rem; justify-content:flex-end;">
       <button class="btn" style="background:#555;" onclick="petBids.closeMergeDialog()">Cancel</button>
@@ -392,9 +392,32 @@
     let _token = null;
     let _projectRoot = '';
 
+    function _collapsePathSegments(path) {
+      const isAbs = path.startsWith('/');
+      const out = [];
+      for (const part of path.split('/')) {
+        if (!part || part === '.') continue;
+        if (part === '..') {
+          if (out.length && out[out.length - 1] !== '..') {
+            out.pop();
+          } else if (!isAbs) {
+            out.push('..');
+          }
+          continue;
+        }
+        out.push(part);
+      }
+      const joined = out.join('/');
+      if (isAbs) return '/' + joined;
+      return joined || '.';
+    }
+
     function _normalizeDisplayPath(value) {
       let path = String(value || '').trim().replace(/\\/g, '/');
-      const root = String(_projectRoot || '').trim().replace(/\\/g, '/').replace(/\/+$/, '');
+      const root = _collapsePathSegments(
+        String(_projectRoot || '').trim().replace(/\\/g, '/').replace(/\/+$/, '')
+      );
+      path = _collapsePathSegments(path);
       if (root && path === root) {
         return '';
       }
@@ -410,12 +433,32 @@
       return path;
     }
 
+    function _normalizeRootPath(value) {
+      const raw = String(value || '').trim().replace(/\\/g, '/');
+      if (!raw) return '';
+      const collapsed = _collapsePathSegments(raw);
+      return raw.startsWith('/') && !collapsed.startsWith('/')
+        ? '/' + collapsed
+        : collapsed;
+    }
+
     function _addToken(url) {
-      if (!_token) return url;
       if (!url || typeof url !== 'string') return url;
       if (!url.startsWith('/')) return url;
       if (url.includes('token=')) return url;
-      return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(_token);
+
+      // Try all known token sources so requests keep working across tab reloads.
+      const urlToken = new URLSearchParams(window.location.search).get('token');
+      const globalToken = (typeof authToken !== 'undefined') ? authToken : null;
+      const token = _token || urlToken || globalToken;
+      if (!token) {
+        if (typeof addTokenToUrl === 'function') {
+          return addTokenToUrl(url);
+        }
+        return url;
+      }
+
+      return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token);
     }
 
     function esc(s) {
@@ -491,23 +534,24 @@
         document.getElementById('status-column-names').value = defaultTracking.join(', ');
 
         const petCfgResp = await fetch(_addToken('/pet-get-config'));
+        if (petCfgResp.status === 401 && window._handleAuthError) {
+          window._handleAuthError();
+          return;
+        }
         if (!petCfgResp.ok) {
-          throw new Error('Failed to load PET defaults');
+          throw new Error('Failed to load PET defaults (HTTP ' + petCfgResp.status + ')');
         }
         const petCfg = await petCfgResp.json();
-        _projectRoot = petCfg.project_root || '';
-        document.getElementById('path-static').textContent = petCfg.project_root;
-        document.getElementById('raw-path-static').textContent = petCfg.project_root;
-        document.getElementById('pet-bids-root-static').textContent = petCfg.project_root;
-        document.getElementById('pet-bids-out-static').textContent = petCfg.project_root;
-        document.getElementById('pet-bids-cfg-root-static').textContent = petCfg.project_root;
+        _projectRoot = _normalizeRootPath(petCfg.project_root || '');
+        document.getElementById('pet-path-static').textContent = _projectRoot;
+        document.getElementById('raw-path-static').textContent = _projectRoot;
+        document.getElementById('pet-bids-root-static').textContent = _projectRoot;
+        document.getElementById('pet-bids-out-static').textContent = _projectRoot;
+        document.getElementById('pet-bids-cfg-root-static').textContent = _projectRoot;
         if (petCfg.warning) {
-          const w = document.getElementById('path-warn');
+          const w = document.getElementById('pet-raw-path-warn');
           w.textContent = '⚠ ' + petCfg.warning;
           w.style.display = '';
-          const rawWarn = document.getElementById('raw-path-warn');
-          rawWarn.textContent = '⚠ ' + petCfg.warning;
-          rawWarn.style.display = '';
         }
         if (petCfg.default_path) {
           const rawDisplayPath = _normalizeDisplayPath(petCfg.default_path);
@@ -518,14 +562,23 @@
           document.getElementById('overview-path').value = htmlDisplayPath;
         }
         if (petCfg.html_warning) {
-          const w = document.getElementById('path-warn');
+          const w = document.getElementById('pet-path-warn');
           w.textContent = '⚠ ' + petCfg.html_warning;
           w.style.display = '';
         }
 
-        const csvCfg = await fetch(_addToken('/get-csv-config')).then(r => r.json());
-        document.getElementById('csv-path-static').textContent = csvCfg.project_root;
-        document.getElementById('target-path-static').textContent = csvCfg.project_root;
+        const csvResp = await fetch(_addToken('/get-csv-config'));
+        if (csvResp.status === 401 && window._handleAuthError) {
+          window._handleAuthError();
+          return;
+        }
+        if (!csvResp.ok) {
+          throw new Error('Failed to load CSV defaults (HTTP ' + csvResp.status + ')');
+        }
+        const csvCfg = await csvResp.json();
+        const csvRoot = _normalizeRootPath(csvCfg.project_root || '');
+        document.getElementById('csv-path-static').textContent = csvRoot;
+        document.getElementById('target-path-static').textContent = csvRoot;
         if (csvCfg.warning) {
           const w = document.getElementById('csv-warn');
           w.textContent = '⚠ ' + csvCfg.warning;
@@ -536,7 +589,19 @@
           document.getElementById('target-file-path').value = csvCfg.default_csv.replace(/[^/]*$/, 'progress.csv');
         }
         renderCsvFileList(csvCfg.csv_files || []);
-      } catch (_) { /* ignore */ }
+      } catch (err) {
+        const msg = (err && err.message) ? err.message : 'Failed to load PET tab defaults.';
+        const warnEls = [
+          document.getElementById('pet-path-warn'),
+          document.getElementById('pet-raw-path-warn'),
+          document.getElementById('csv-warn'),
+        ].filter(Boolean);
+        for (const el of warnEls) {
+          el.textContent = '⚠ ' + msg;
+          el.style.display = '';
+        }
+        console.error('PET tab initialization failed:', err);
+      }
     }
 
     async function loadHelperSummary(prePopulate) {
@@ -1244,7 +1309,7 @@
     async function runDcm2bids() {
       const dicomRel = document.getElementById('pet-bids-dicom-path').value.trim();
       const outputRel = document.getElementById('pet-bids-output-path').value.trim();
-      const configRel = 'utils/bids-utils-mr/dcm2bids_config_pet.json';
+      const configRel = 'bids-utils-mr/dcm2bids_config_pet.json';
       const workers = parseInt(document.getElementById('pet-bids-workers').value, 10) || 8;
       const clobber = document.getElementById('pet-bids-clobber').checked;
       const btn = document.getElementById('pet-run-bids-btn');
@@ -1297,14 +1362,14 @@
         if (data.error) {
           statusEl.innerHTML = '<span class="t-err">✗ ' + esc(data.error) + '</span>';
           btn.disabled = false;
-          btn.textContent = 'Run dcm2bids';
+          btn.textContent = 'Run PET BIDS';
           return;
         }
         _streamBidsJob(data.job_id, btn, statusEl);
       } catch (e) {
         statusEl.innerHTML = '<span class="t-err">✗ ' + esc(e.message) + '</span>';
         btn.disabled = false;
-        btn.textContent = 'Run dcm2bids';
+        btn.textContent = 'Run PET BIDS';
       }
     }
 
@@ -1335,7 +1400,7 @@
           logEl.innerHTML += '<span class="t-ok">\n✓ All sessions complete.</span>\n';
           src.close();
           btn.disabled = false;
-          btn.textContent = 'Run dcm2bids';
+          btn.textContent = 'Run PET BIDS';
           statusEl.innerHTML = '<span class="t-ok">✓ Batch complete</span>';
         }
         logEl.scrollTop = logEl.scrollHeight;
@@ -1344,7 +1409,7 @@
       src.onerror = () => {
         src.close();
         btn.disabled = false;
-        btn.textContent = 'Run dcm2bids';
+        btn.textContent = 'Run PET BIDS';
         if (!logEl.textContent.includes('All sessions complete')) {
           logEl.innerHTML += '<span class="t-err">Connection lost.</span>\n';
           statusEl.innerHTML = '<span class="t-err">✗ Stream disconnected</span>';
@@ -1565,7 +1630,8 @@
       loadConfigEditor,
       saveConfigEditor,
       init: (token) => {
-        _token = token;
+        const urlToken = new URLSearchParams(window.location.search).get('token');
+        _token = token || urlToken || null;
         initializeAndLoad();
         loadHelperSummary(true);
       },

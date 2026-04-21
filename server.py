@@ -106,7 +106,24 @@ def _find_available_port(start_port=8080, max_attempts=10):
 _GET_ROUTES  = {}   # path -> handler(h, query_params)
 _POST_ROUTES = {}   # path -> handler(h, body_dict)
 _TABS        = []   # list of TAB_METADATA dicts, sorted by "order"
-_PROJECT_ROOT = os.path.realpath(os.path.join(_SCRIPT_DIR, "..", ".."))
+
+
+def _detect_project_root(script_dir):
+    """Return /data/projects/<PROJECT_NAME> for any nested repo location.
+
+    This keeps tab visibility checks stable even if this repository is moved
+    deeper under utility folders.
+    """
+    resolved = os.path.realpath(script_dir)
+    m = re.match(r"^(/data/projects/[^/]+)(?:/|$)", resolved)
+    if m:
+        return m.group(1)
+    # Fallback for non-standard deployments where the repo lives directly
+    # inside the project folder (e.g. /some/path/<project>/bids-utils-mr).
+    return os.path.realpath(os.path.join(script_dir, ".."))
+
+
+_PROJECT_ROOT = _detect_project_root(_SCRIPT_DIR)
 
 
 def _tab_is_visible(tab):

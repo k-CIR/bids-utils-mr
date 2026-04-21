@@ -14,6 +14,16 @@ import subprocess
 import sys
 _TAB_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
+def _detect_project_root(script_dir):
+    """Return /data/projects/<project> for nested repo locations."""
+    resolved = os.path.realpath(script_dir)
+    match = re.match(r"^(/data/projects/[^/]+)(?:/|$)", resolved)
+    if match:
+        return match.group(1)
+    # Fallback: tab dir is <project>/bids-utils-mr/tabs/<tab>
+    return os.path.realpath(os.path.join(script_dir, "..", "..", ".."))
+
 _CFG_PATH = os.path.join(_TAB_DIR, "config_builder.py")
 _CFG_SPEC = importlib.util.spec_from_file_location("mr_bids_config_builder", _CFG_PATH)
 config_builder = importlib.util.module_from_spec(_CFG_SPEC)
@@ -36,9 +46,7 @@ TAB_METADATA = {
 }
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-# PROJECT_ROOT is four levels up: tabs/mr-bids/ → tabs/ → bids-utils-mr/ → utils/ → project root
-_BIDS_UTILS_DIR = os.path.dirname(os.path.dirname(_TAB_DIR))  # …/bids-utils-mr/
-_PROJECT_ROOT   = os.path.dirname(os.path.dirname(_BIDS_UTILS_DIR))  # …/<project>/
+_PROJECT_ROOT   = _detect_project_root(_TAB_DIR)
 _RAW_MRI_DIR    = os.path.join(_PROJECT_ROOT, "raw", "mri")
 _OUTPUT_DIR     = os.path.join(_TAB_DIR, "dcm2bids_helper")
 

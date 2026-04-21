@@ -16,10 +16,20 @@ TAB_METADATA = {
     "id": "pet-bids",
     "label": "PET BIDS",
     "order": 1,
-    "requires_path": "raw/pet",
+    "requires_path": "raw/bmic",
 }
 
 _TAB_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _detect_project_root(script_dir):
+    """Return /data/projects/<project> for nested repo locations."""
+    resolved = os.path.realpath(script_dir)
+    match = re.match(r"^(/data/projects/[^/]+)(?:/|$)", resolved)
+    if match:
+        return match.group(1)
+    # Fallback: tab dir is <project>/bids-utils-mr/tabs/<tab>
+    return os.path.realpath(os.path.join(script_dir, "..", "..", ".."))
 
 _CFG_PATH = os.path.join(_TAB_DIR, "config_builder.py")
 _CFG_SPEC = importlib.util.spec_from_file_location("pet_bids_config_builder", _CFG_PATH)
@@ -34,12 +44,16 @@ _RUNNER_SPEC = importlib.util.spec_from_file_location("pet_bids_runner", _RUNNER
 bids_runner = importlib.util.module_from_spec(_RUNNER_SPEC)
 _RUNNER_SPEC.loader.exec_module(bids_runner)
 
-_BIDS_UTILS_DIR = os.path.dirname(os.path.dirname(_TAB_DIR))
-PROJECT_ROOT = os.path.realpath(os.path.join(_BIDS_UTILS_DIR, "..", ".."))
+_PET_RUNNER_PATH = os.path.join(_TAB_DIR, "pet2bids_runner.py")
+_PET_RUNNER_SPEC = importlib.util.spec_from_file_location("pet2bids_runner", _PET_RUNNER_PATH)
+pet2bids_runner = importlib.util.module_from_spec(_PET_RUNNER_SPEC)
+_PET_RUNNER_SPEC.loader.exec_module(pet2bids_runner)
+
+PROJECT_ROOT = _detect_project_root(_TAB_DIR)
 _RAW_PET_HELPER_DIR = os.path.join(PROJECT_ROOT, "raw", "bmic")
 _OUTPUT_DIR = os.path.join(_TAB_DIR, "dcm2bids_helper")
 
-_CSV_RAW_PET_DIR = os.path.join(PROJECT_ROOT, "BIDS_pet")
+_CSV_RAW_PET_DIR = os.path.join(PROJECT_ROOT, "BIDS")
 _DEFAULT_PET_DATA_DIR = os.path.join(PROJECT_ROOT, "BIDS")
 _DEFAULT_PETPREP_HTML_DIR = os.path.join(PROJECT_ROOT, "BIDS", "derivatives", "petprep")
 
@@ -60,6 +74,7 @@ def _split_path_list(value):
 _RAW_PET_DIR = _resolve_config_path(os.environ.get("BIDS_UTILS_PET_DATA_DIR"), _DEFAULT_PET_DATA_DIR)
 _CSV_DERIVATIVES_DIR_CANDIDATES = [
     os.path.join(_CSV_RAW_PET_DIR, "derivatives"),
+    os.path.join(PROJECT_ROOT, "BIDS_pet", "derivatives"),
     os.path.join(PROJECT_ROOT, "derivatives"),
 ]
 _PET_DERIVATIVES_DIR_CANDIDATES = [
@@ -401,23 +416,30 @@ def _get_csv_browser_config():
 
 def _iter_raw_pet_overview_lines(base_dir):
     found_any = False
-    for root, _, files in os.walk(base_dir):
-        for filename in sorted(files):
-            if not filename.lower().endswith(".html"):
-                continue
+    try:
+        entries = sorted(os.listdir(base_dir))
+    except OSError:
+        entries = []
 
-            found_any = True
-            file_path = os.path.join(root, filename)
-            rel_path = os.path.relpath(file_path, PROJECT_ROOT)
-            try:
-                size = os.path.getsize(file_path)
-            except OSError:
-                size = -1
-            yield {
-                "file": filename,
-                "rel_path": rel_path,
-                "size": size,
-            }
+    for filename in entries:
+        if not filename.lower().endswith(".html"):
+            continue
+
+        file_path = os.path.join(base_dir, filename)
+        if not os.path.isfile(file_path):
+            continue
+
+        found_any = True
+        rel_path = os.path.relpath(file_path, PROJECT_ROOT)
+        try:
+            size = os.path.getsize(file_path)
+        except OSError:
+            size = -1
+        yield {
+            "file": filename,
+            "rel_path": rel_path,
+            "size": size,
+        }
 
     if not found_any:
         yield "No .html files found."
@@ -600,7 +622,7 @@ def _handle_run_dcm2bids(h, body):
         return
 
     try:
-        job_id = bids_runner.start_conversion(
+        job_id = pet2bids_runner.start_conversion(
             sessions, dicom_root, output_dir, config_file, max_workers, clobber
         )
         h._send_json({"job_id": job_id})
@@ -621,7 +643,7 @@ def _handle_stream_dcm2bids_job(h, params):
     h.end_headers()
 
     try:
-        for entry in bids_runner.stream_job(job_id):
+        for entry in pet2bids_runner.stream_job(job_id):
             _emit_sse(h, entry)
             if entry.get("type") == "done":
                 break

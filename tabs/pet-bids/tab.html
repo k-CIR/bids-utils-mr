@@ -160,7 +160,7 @@
       <span id="pet-bids-run-status" style="font-size:0.87rem;"></span>
       <span id="pet-bids-recode-status" style="font-size:0.87rem; margin-left:auto;"></span>
     </div>
-    <p class="description" style="margin:0.7rem 0 0;">PET config files now feed an adapter-backed runner. The actual conversion still depends on the PET container runtime.</p>
+    <p class="description" style="margin:0.7rem 0 0;">PET/CT conversion uses both your config settings and session recode key to build each run plan, then executes in a Singularity container with dcm2niix and pypet2bids installed.</p>
   </div>
 
   <div id="pet-bids-log"
@@ -492,9 +492,8 @@
     }
 
     const SUFFIX_OPTS = {
-      pet:  ['pet'],
-      anat: ['T1w','T2w'],
-      fmap: ['fieldmap','epi'],
+      pet: ['pet'],
+      ct:  ['ct'],
     };
 
     function switchSubTab(name) {
@@ -735,7 +734,7 @@
         : '';
       warnEl.style.display = hasDups ? '' : 'none';
 
-      const dtypes = ['pet', 'anat', 'fmap'];
+      const dtypes = ['pet', 'ct'];
       let html = '<table class="config-table"><thead><tr>'
         + '<th colspan="6">Input</th>'
         + '<th colspan="7" class="col-output"><strong>Output</strong></th>'

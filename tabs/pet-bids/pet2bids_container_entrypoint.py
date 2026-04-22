@@ -79,11 +79,27 @@ def _first_expected(criteria, key):
     return _norm_text(value)
 
 
-def _resolve_pet_source_dir(src, matched_desc=None):
+def _target_suffix(matched_desc):
+    matched = matched_desc if isinstance(matched_desc, dict) else {}
+    suffix = _norm_text(matched.get("suffix"))
+    if suffix:
+        return suffix
+    datatype = _norm_text(matched.get("datatype"))
+    if datatype.casefold() == "ct":
+        return "ct"
+    return "pet"
+
+
+def _is_ct_target(matched_desc):
+    return _target_suffix(matched_desc).casefold() == "ct"
+
+
+def _resolve_source_dir(src, matched_desc=None):
     src = os.path.realpath(str(src or "").strip())
     if not src or not os.path.isdir(src):
         raise ValueError(f"Source folder does not exist: {src}")
 
+    target = "ct" if _is_ct_target(matched_desc) else "pet"
     criteria = (matched_desc or {}).get("criteria") or {}
     expected_sd = _first_expected(criteria, "SeriesDescription")
     expected_pn = _first_expected(criteria, "ProtocolName")
@@ -102,7 +118,9 @@ def _resolve_pet_source_dir(src, matched_desc=None):
             "sd_match": 0,
             "pn_match": 0,
             "pt_modality": 0,
+            "ct_modality": 0,
             "pt_named_dir": os.path.basename(root).lower() in {"pt", "pet"},
+            "ct_named_dir": os.path.basename(root).lower() in {"ct"},
         })
         for fname in files:
             fpath = os.path.join(root, fname)
@@ -130,6 +148,8 @@ def _resolve_pet_source_dir(src, matched_desc=None):
             modality = _norm_text(getattr(ds, "Modality", "")).upper()
             if modality in {"PT", "PET"}:
                 stat["pt_modality"] += 1
+            if modality == "CT":
+                stat["ct_modality"] += 1
 
     if not dir_stats:
         return src
@@ -139,30 +159,34 @@ def _resolve_pet_source_dir(src, matched_desc=None):
         matches = st["sd_match"] + st["pn_match"]
         has_criteria = bool(expected_sd or expected_pn)
         criteria_hit = matches > 0 if has_criteria else False
+        modality_hits = st["ct_modality"] if target == "ct" else st["pt_modality"]
+        named_dir_hit = st["ct_named_dir"] if target == "ct" else st["pt_named_dir"]
         return (
             1 if criteria_hit else 0,
             matches,
-            st["pt_modality"],
-            1 if st["pt_named_dir"] else 0,
+            modality_hits,
+            1 if named_dir_hit else 0,
             st["dicom_count"],
             -len(path),
         )
 
     best_dir, best_stat = max(dir_stats.items(), key=_score)
 
-    # If criteria were provided but no folder matched at all, prefer PET-like modality/dir with max files.
+    # If criteria were provided but no folder matched at all, prefer target-like modality/dir with max files.
     if (expected_sd or expected_pn) and (best_stat["sd_match"] + best_stat["pn_match"] == 0):
+        modality_key = "ct_modality" if target == "ct" else "pt_modality"
+        named_dir_key = "ct_named_dir" if target == "ct" else "pt_named_dir"
         best_dir, _ = max(
             dir_stats.items(),
             key=lambda item: (
-                item[1]["pt_modality"],
-                1 if item[1]["pt_named_dir"] else 0,
+                item[1][modality_key],
+                1 if item[1][named_dir_key] else 0,
                 item[1]["dicom_count"],
                 -len(item[0]),
             ),
         )
 
-    print(f"Resolved PET source folder: {best_dir}")
+    print(f"Resolved {target.upper()} source folder: {best_dir}")
     if expected_sd or expected_pn:
         print(
             "Selection criteria:",
@@ -195,7 +219,7 @@ def _format_session(value):
     return value if value.startswith("ses-") else f"ses-{value}"
 
 
-def _build_destination(output_dir, session):
+def _build_destination(output_dir, session, matched_desc=None):
     subject = _format_subject(session.get("participant"))
     ses = _format_session(session.get("session"))
     if not subject:
@@ -204,7 +228,8 @@ def _build_destination(output_dir, session):
     dest = os.path.join(output_dir, subject)
     if ses:
         dest = os.path.join(dest, ses)
-    return os.path.join(dest, "pet")
+    modality_dir = "ct" if _is_ct_target(matched_desc) else "pet"
+    return os.path.join(dest, modality_dir)
 
 
 def _extract_kwargs(matched_desc):
@@ -215,7 +240,7 @@ def _extract_kwargs(matched_desc):
     return out
 
 
-def _expected_output_prefix(session, matched_desc):
+def _expected_output_basename(session, matched_desc):
     subject = _format_subject(session.get("participant"))
     ses = _format_session(session.get("session"))
     parts = [subject]
@@ -228,43 +253,31 @@ def _expected_output_prefix(session, matched_desc):
         if token:
             parts.append(token)
 
-    return "_".join(parts) + "_"
+    suffix = _target_suffix(matched_desc)
+    parts.append(suffix)
+    return "_".join(parts)
 
 
-def _find_existing_pet_output(dest_dir, session, matched_desc):
+def _find_existing_output(dest_dir, session, matched_desc):
     if not os.path.isdir(dest_dir):
         return None
 
-    prefix = _expected_output_prefix(session, matched_desc)
-
-    candidates = []
-    try:
-        for name in os.listdir(dest_dir):
-            full = os.path.join(dest_dir, name)
-            if not os.path.isfile(full):
-                continue
-            if prefix and not name.startswith(prefix):
-                continue
-            if name.endswith("_pet.nii") or name.endswith("_pet.nii.gz"):
-                candidates.append(name)
-            elif name.endswith("_pet.json"):
-                candidates.append(name)
-    except OSError:
-        return None
-
-    if not candidates:
-        return None
-
-    # Prefer nifti artifacts over json when both exist.
-    candidates.sort(key=lambda n: (0 if n.endswith(".nii.gz") else 1 if n.endswith(".nii") else 2, n))
-    return candidates[0]
+    basename = _expected_output_basename(session, matched_desc)
+    candidates = [
+        basename + ".nii.gz",
+        basename + ".nii",
+        basename + ".json",
+    ]
+    for name in candidates:
+        if os.path.isfile(os.path.join(dest_dir, name)):
+            return name
+    return None
 
 
-def _build_command(plan):
+def _build_command(plan, matched_desc):
     session = plan.get("session") or {}
     launch = plan.get("launch") or {}
-    selected = plan.get("matched_descriptions") or []
-    matched = selected[0] if selected else {}
+    matched = matched_desc if isinstance(matched_desc, dict) else {}
     entities = matched.get("entities") or []
 
     src = str(session.get("folder") or "").strip()
@@ -274,9 +287,28 @@ def _build_command(plan):
     if not out_root:
         raise ValueError("Output directory missing in conversion plan")
 
-    src = _resolve_pet_source_dir(src, matched)
+    src = _resolve_source_dir(src, matched)
 
-    destination = _build_destination(out_root, session)
+    destination = _build_destination(out_root, session, matched)
+    os.makedirs(destination, exist_ok=True)
+
+    if _is_ct_target(matched):
+        dcm2niix_bin = os.environ.get("DCM2NIIX_PATH") or shutil.which("dcm2niix")
+        if not dcm2niix_bin:
+            raise RuntimeError("dcm2niix is not available; CT conversion requires dcm2niix")
+        basename = _expected_output_basename(session, matched)
+        cmd = [
+            dcm2niix_bin,
+            "-b", "y",
+            "-z", "y",
+            "-o", destination,
+            "-f", basename,
+        ]
+        dcm2niix_options = plan.get("dcm2niix_options") or []
+        if dcm2niix_options:
+            cmd.extend([str(item) for item in dcm2niix_options])
+        cmd.append(src)
+        return cmd, destination
 
     cmd = [
         "python",
@@ -307,7 +339,7 @@ def _build_command(plan):
         cmd.append("--dcm2niix-options")
         cmd.extend([str(item) for item in dcm2niix_options])
 
-    return cmd, destination, matched
+    return cmd, destination
 
 
 def main(argv=None):
@@ -318,6 +350,7 @@ def main(argv=None):
     plan = _read_plan(args.plan_file)
     session = plan.get("session", {}) if isinstance(plan, dict) else {}
     selected = plan.get("matched_descriptions", []) if isinstance(plan, dict) else []
+    descriptions = selected if selected else [{}]
 
     print(f"PET plan loaded for {session.get('label', 'unknown session')}")
     print(f"Matched descriptions: {len(selected)}")
@@ -332,39 +365,58 @@ def main(argv=None):
             os.environ["DCM2NIIX_PATH"] = dcm2niix_path
             print(f"Using dcm2niix at {dcm2niix_path}")
 
-    try:
-        import pypet2bids  # type: ignore  # noqa: F401
-    except Exception:
-        allow_bootstrap = os.environ.get("PET2BIDS_ALLOW_BOOTSTRAP", "0").strip().lower() in {"1", "true", "yes"}
-        if not allow_bootstrap:
-            print(
-                "pypet2bids is not available inside the container. "
-                "Use a fully built image or set PET2BIDS_ALLOW_BOOTSTRAP=1 for temporary bootstrapping.",
-                file=sys.stderr,
-            )
-            return 1
+    needs_pet_runtime = any(not _is_ct_target(desc) for desc in descriptions)
+    if needs_pet_runtime:
         try:
-            _ensure_runtime_packages()
             import pypet2bids  # type: ignore  # noqa: F401
-        except Exception as exc:
-            print(f"pypet2bids is not available inside the container: {exc}", file=sys.stderr)
-            return 1
-
-    try:
-        cmd, destination, matched = _build_command(plan)
-    except Exception as exc:
-        print(f"Failed to build PET command from plan: {exc}", file=sys.stderr)
-        return 1
+        except Exception:
+            allow_bootstrap = os.environ.get("PET2BIDS_ALLOW_BOOTSTRAP", "0").strip().lower() in {"1", "true", "yes"}
+            if not allow_bootstrap:
+                print(
+                    "pypet2bids is not available inside the container. "
+                    "Use a fully built image or set PET2BIDS_ALLOW_BOOTSTRAP=1 for temporary bootstrapping.",
+                    file=sys.stderr,
+                )
+                return 1
+            try:
+                _ensure_runtime_packages()
+                import pypet2bids  # type: ignore  # noqa: F401
+            except Exception as exc:
+                print(f"pypet2bids is not available inside the container: {exc}", file=sys.stderr)
+                return 1
 
     clobber = bool((plan.get("launch") or {}).get("clobber", False))
-    existing_output = _find_existing_pet_output(destination, session, matched)
-    if not clobber and existing_output:
-        print(f"skipped because output {existing_output} already exists")
-        return 0
+    failures = 0
+    ran_any = False
 
-    print("Executing:", " ".join(cmd))
-    proc = subprocess.run(cmd, text=True)
-    return int(proc.returncode)
+    for idx, matched in enumerate(descriptions, start=1):
+        desc_index = matched.get("index") if isinstance(matched, dict) else None
+        suffix = _target_suffix(matched)
+        label = f"description #{desc_index}" if desc_index is not None else f"description {idx}"
+
+        try:
+            cmd, destination = _build_command(plan, matched)
+        except Exception as exc:
+            print(f"Failed to build PET command for {label}: {exc}", file=sys.stderr)
+            failures += 1
+            continue
+
+        existing_output = _find_existing_output(destination, session, matched)
+        if not clobber and existing_output:
+            print(f"{label} ({suffix}): skipped because output {existing_output} already exists")
+            continue
+
+        print(f"{label} ({suffix}): Executing: {' '.join(cmd)}")
+        proc = subprocess.run(cmd, text=True)
+        ran_any = True
+        if int(proc.returncode) != 0:
+            failures += 1
+
+    if failures:
+        return 1
+    if not ran_any:
+        print("No conversions executed; all matched outputs already existed.")
+    return 0
 
 
 if __name__ == "__main__":

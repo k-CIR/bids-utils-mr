@@ -625,7 +625,7 @@
           const saved = stateMap.get(_stateKey(row));
           return saved || {
             selected: { series_number: false, series_description: false, protocol_name: false, modality: false, image_type: false, radiopharmaceutical: false },
-            datatype: 'pet', trc: '', rec: '', run: '', desc: '', suffix: 'pet', other_suffix: ''
+            datatype: 'pet', trc: '', rec: '', run: '', suffix: 'pet', other_suffix: ''
           };
         });
 
@@ -694,11 +694,9 @@
         const trcEnt = ce.find(e => e.startsWith('trc-'));
         const recEnt = ce.find(e => e.startsWith('rec-'));
         const runEnt = ce.find(e => e.startsWith('run-'));
-        const descEnt = ce.find(e => e.startsWith('desc-'));
         s.trc = trcEnt ? trcEnt.slice(4) : '';
         s.rec = recEnt ? recEnt.slice(4) : '';
         s.run = runEnt ? runEnt.slice(4) : '';
-        s.desc = descEnt ? descEnt.slice(5) : '';
       }
     }
 
@@ -737,11 +735,11 @@
       const dtypes = ['pet', 'ct'];
       let html = '<table class="config-table"><thead><tr>'
         + '<th colspan="6">Input</th>'
-        + '<th colspan="7" class="col-output"><strong>Output</strong></th>'
+        + '<th colspan="6" class="col-output"><strong>Output</strong></th>'
         + '</tr><tr>'
         + '<th>Series number</th><th>Series description</th><th>Protocol name</th><th>Modality</th><th>Image type</th><th>Radiopharmaceutical</th>'
         + '<th class="col-output"><strong>Data type <span style="color:#f48771">*</span></strong></th>'
-        + '<th>Tracer (trc)</th><th>Reconstruction (rec)</th><th>Run</th><th>Description</th>'
+        + '<th>Tracer (trc)</th><th>Reconstruction (rec)</th><th>Run</th>'
         + '<th><strong>Suffix <span style="color:#f48771">*</span></strong></th><th>Other suffix</th>'
         + '</tr></thead><tbody>';
 
@@ -766,7 +764,6 @@
           + '<td><input class="tbl-input" type="text" value="' + escAttr(s.trc) + '" placeholder="(optional)" oninput="petBids.updateState(' + i + ',\'trc\',this.value)"></td>'
           + '<td><input class="tbl-input" type="text" value="' + escAttr(s.rec) + '" placeholder="(optional)" oninput="petBids.updateState(' + i + ',\'rec\',this.value)"></td>'
           + '<td><input class="tbl-input" type="text" value="' + escAttr(s.run) + '" placeholder="(optional)" oninput="petBids.updateState(' + i + ',\'run\',this.value)"></td>'
-          + '<td><input class="tbl-input" type="text" value="' + escAttr(s.desc || '') + '" placeholder="(optional)" oninput="petBids.updateState(' + i + ',\'desc\',this.value)"></td>'
           + '<td><select class="tbl-select" onchange="petBids.updateSuffix(' + i + ',this.value)"><option value="">--</option>' + suffixOpts + '</select></td>'
           + '<td><input class="tbl-input" type="text" value="' + escAttr(s.other_suffix || '') + '" placeholder="(optional)" oninput="petBids.updateOtherSuffix(' + i + ',this.value)"></td>'
           + '</tr>';
@@ -793,9 +790,9 @@
       if (!tbody) return;
       const row = tbody.rows[rowIdx];
       const opts = (SUFFIX_OPTS[value] || []).map(v => '<option value="' + v + '">' + v + '</option>').join('');
-      const sel = row.cells[11].querySelector('select');
+      const sel = row.cells[10].querySelector('select');
       if (sel) sel.innerHTML = '<option value="">--</option>' + opts;
-      const other = row.cells[12].querySelector('input');
+      const other = row.cells[11].querySelector('input');
       if (other) other.value = '';
     }
 
@@ -804,7 +801,7 @@
       tableState[rowIdx].other_suffix = '';
       const tbody = document.querySelector('#pet-config-table-container .config-table tbody');
       if (!tbody) return;
-      const other = tbody.rows[rowIdx].cells[12].querySelector('input');
+      const other = tbody.rows[rowIdx].cells[11].querySelector('input');
       if (other) other.value = '';
     }
 
@@ -814,7 +811,7 @@
         tableState[rowIdx].suffix = '';
         const tbody = document.querySelector('#pet-config-table-container .config-table tbody');
         if (!tbody) return;
-        const sel = tbody.rows[rowIdx].cells[11].querySelector('select');
+        const sel = tbody.rows[rowIdx].cells[10].querySelector('select');
         if (sel) sel.value = '';
       }
     }
@@ -832,7 +829,6 @@
         if (s.trc.trim()) ce.push('trc-' + s.trc.trim());
         if (s.rec.trim()) ce.push('rec-' + s.rec.trim());
         if (s.run.trim()) ce.push('run-' + s.run.trim());
-        if (s.desc.trim()) ce.push('desc-' + s.desc.trim());
         if (ce.length) d.custom_entities = ce;
 
         d.criteria = {};
@@ -922,7 +918,7 @@
         }
         tableState = tableRows.map(() => ({
           selected: { series_number: false, series_description: false, protocol_name: false, modality: false, image_type: false, radiopharmaceutical: false },
-          datatype: 'pet', trc: '', rec: '', run: '', desc: '', suffix: 'pet', other_suffix: ''
+          datatype: 'pet', trc: '', rec: '', run: '', suffix: 'pet', other_suffix: ''
         }));
         _prePopulateFromConfig(data.config);
         renderConfigTable();

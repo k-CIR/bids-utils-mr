@@ -655,6 +655,20 @@ def _handle_save_bids_config(h, body):
     if not isinstance(body, dict) or "descriptions" not in body:
         h.send_error(400, "Invalid config: missing 'descriptions'")
         return
+
+    descriptions = body.get("descriptions")
+    if isinstance(descriptions, list):
+        for desc in descriptions:
+            if not isinstance(desc, dict):
+                continue
+            custom_entities = desc.get("custom_entities")
+            if isinstance(custom_entities, list):
+                desc["custom_entities"] = [
+                    item for item in custom_entities
+                    if not str(item or "").strip().casefold().startswith("desc-")
+                ]
+            desc.pop("desc", None)
+
     try:
         config_builder.save_config(body)
         h._send_json({"ok": True})

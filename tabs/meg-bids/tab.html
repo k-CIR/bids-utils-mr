@@ -1,0 +1,1265 @@
+<!--
+  MEG BIDS tab fragment.
+  Simplified UI for MEG BIDS conversion - integrated with main server.
+-->
+
+<div id="meg-bids-container">
+  <!-- Navigation -->
+  <nav class="view-tabs sidebar" aria-label="MEG BIDS workflow">
+    <button type="button" class="nav-item active" data-step="1" onclick="megBids.switchStep(1)">
+      <span class="step-number">1.</span>
+      <span class="step-label">Configuration</span>
+    </button>
+    <button type="button" class="nav-item" data-step="2" onclick="megBids.switchStep(2)">
+      <span class="step-number">2.</span>
+      <span class="step-label">Editor</span>
+    </button>
+    <button type="button" class="nav-item" data-step="3" onclick="megBids.switchStep(3)">
+      <span class="step-number">3.</span>
+      <span class="step-label">Make BIDS</span>
+    </button>
+    <button type="button" class="nav-item" data-step="4" onclick="megBids.switchStep(4)">
+      <span class="step-number">4.</span>
+      <span class="step-label">Results</span>
+    </button>
+  </nav>
+
+  <!-- Step 1: Configuration -->
+  <div id="meg-step-1" class="meg-step active">
+    <div class="meg-config-layout">
+      <!-- Left: Path Configuration -->
+      <div class="meg-config-paths">
+        <h4>Configuration Paths</h4>
+
+        <!-- Project Name -->
+        <div class="form-group">
+          <label>Project Name</label>
+          <input type="text" id="megCfgProjectName" class="path-input-full" placeholder="MEG Dataset" oninput="megBids.syncFormToJson()">
+        </div>
+
+        <!-- Project Root Display -->
+        <div class="form-group">
+          <label>Project Root</label>
+          <div class="path-static-display" id="megProjectRootDisplay">/data/projects/...</div>
+        </div>
+
+        <!-- Raw Directory -->
+        <div class="form-group">
+          <label>Raw Directory <span id="val-raw" class="path-validation"></span></label>
+          <div class="path-row-compound">
+            <span class="path-static-root" id="megRootPrefixRaw">/data/projects/.../</span>
+            <input type="text" id="megCfgRawDir" class="path-input-relative" placeholder="raw/meg" value="raw/meg" oninput="megBids.syncFormToJson()">
+          </div>
+        </div>
+
+        <!-- BIDS Directory -->
+        <div class="form-group">
+          <label>BIDS Directory <span id="val-bids" class="path-validation"></span></label>
+          <div class="path-row-compound">
+            <span class="path-static-root" id="megRootPrefixBids">/data/projects/.../</span>
+            <input type="text" id="megCfgBidsDir" class="path-input-relative" placeholder="BIDS" value="BIDS" oninput="megBids.syncFormToJson()">
+          </div>
+        </div>
+
+        <!-- Tasks -->
+        <div class="form-group">
+          <label>Tasks</label>
+          <div class="tags-input-container" id="megTasksContainer">
+            <div class="tags-list" id="megTasksList"></div>
+            <input type="text" id="megCfgTasksInput" class="tags-input" placeholder="Add task..." onkeydown="megBids.handleTasksKeydown(event)">
+          </div>
+        </div>
+
+        <!-- Conversion File -->
+        <div class="form-group">
+          <label>Conversion Table File <span id="val-conv" class="path-validation"></span></label>
+          <div class="path-row-compound">
+            <span class="path-static-root" id="megRootPrefixConv">/data/projects/.../</span>
+            <input type="text" id="megCfgConversionFile" class="path-input-relative" placeholder="logs/bids_conversion.tsv" value="logs/bids_conversion.tsv" oninput="megBids.syncFormToJson()">
+          </div>
+        </div>
+
+        <!-- Overwrite Toggle -->
+        <div class="form-group checkbox">
+          <label class="checkbox-label">
+            <input type="checkbox" id="megCfgOverwrite" onchange="megBids.syncFormToJson()">
+            <span>Overwrite existing BIDS files</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Right: JSON Editor -->
+       <!-- Config File Path -->
+      <div class="meg-config-json">
+         <div class="form-group">
+          <label>Config File <span id="val-config" class="path-validation"></span></label>
+          <div class="path-row-compound">
+            <span class="path-static-root" id="megRootPrefixConfig">/data/projects/.../</span>
+            <input type="text" id="megCfgConfigFile" class="path-input-relative" placeholder="meg_config.json" value="meg_config.json" oninput="megBids.syncFormToJson()">
+          </div>
+        </div>
+        <br>
+        <div class="json-header">
+          <h4>Configuration JSON</h4>
+          <div class="json-toggle">
+            <button type="button" class="btn-small active" id="megJsonViewBtn" onclick="megBids.setJsonMode('view')">View</button>
+            <button type="button" class="btn-small" id="megJsonEditBtn" onclick="megBids.setJsonMode('edit')">Edit</button>
+          </div>
+        </div>
+
+        <!-- View Mode: Formatted JSON -->
+        <pre id="megJsonView" class="json-display"></pre>
+
+        <!-- Edit Mode: Textarea -->
+        <textarea id="megJsonEdit" class="json-editor" spellcheck="false" onblur="megBids.syncJsonToForm()" style="display:none;"></textarea>
+
+        <div id="megJsonValidation" class="validation-status"></div>
+
+        <!-- Action Buttons -->
+        <div class="form-actions" style="margin-top: 1rem;">
+          <button class="btn" onclick="megBids.loadConfigFromFile()">Load from File</button>
+          <button class="btn" onclick="megBids.resetDefaults()">Reset to Defaults</button>
+          <button class="btn primary" onclick="megBids.saveConfigToFile()">Save Config</button>
+        </div>
+
+        <!-- Auto-save Status -->
+        <div id="megAutoSaveStatus" class="auto-save-status">Auto-saved ✓</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Editor -->
+  <div id="meg-step-2" class="meg-step" style="display:none;">
+    <h3>Conversion Table Editor</h3>
+    <p class="description">
+      Review and edit the conversion table. Mark files to process, skip, or check.
+      Click cells to edit values inline.
+    </p>
+
+    <div class="form-section">
+      <div style="display:flex; gap:8px; margin-bottom:1rem;">
+        <button id="megAnalyzeBtn" class="btn" onclick="megBids.runAnalysis()">Analyze / Refresh</button>
+        <button id="megSaveTableBtn" class="btn primary" onclick="megBids.saveTable()" disabled>Save Table</button>
+      </div>
+      <div id="megTableStatus" class="muted"></div>
+    </div>
+
+    <div id="megTableContainer" style="overflow-x:auto; max-height:500px; overflow-y:auto;">
+      <table id="megConversionTable" class="config-table" style="display:none;">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Participant</th>
+            <th>Session</th>
+            <th>Task</th>
+            <th>Run</th>
+            <th>Datatype</th>
+            <th>Raw File</th>
+          </tr>
+        </thead>
+        <tbody id="megTableBody"></tbody>
+      </table>
+      <div id="megTableEmpty" class="warn" style="display:none;">
+        No conversion table loaded. Click "Analyze / Refresh" to scan for files.
+      </div>
+    </div>
+
+    <div class="form-section" style="margin-top:1rem;">
+      <small class="hint">
+        <strong>Status values:</strong>
+        <code>run</code> = ready to convert,
+        <code>check</code> = needs review,
+        <code>processed</code> = already converted,
+        <code>skip</code> = ignore,
+        <code>missing</code> = source file not found
+      </small>
+    </div>
+  </div>
+
+  <!-- Step 3: Make BIDS -->
+  <div id="meg-step-3" class="meg-step" style="display:none;">
+    <h3>Make BIDS</h3>
+    <p class="description">
+      Run the BIDS conversion pipeline. This will convert all files marked as 'run' to BIDS format.
+    </p>
+
+    <div class="form-section">
+      <div style="display:flex; gap:8px; margin-bottom:1rem; align-items:center;">
+        <button id="megRunBidsifyBtn" class="btn primary" onclick="megBids.runBidsify()">Run BIDS Conversion</button>
+        <label style="display:flex; align-items:center; gap:4px; font-size:0.85rem;">
+          <input type="checkbox" id="megVerboseCheck"> Verbose output
+        </label>
+      </div>
+      <div id="megConversionStatus" class="muted"></div>
+    </div>
+
+    <div id="megProgressSection" style="display:none; margin-top:1rem;">
+      <div style="background:#1e1e1e; border:1px solid #3c3c3c; border-radius:4px; padding:1rem;">
+        <div style="margin-bottom:0.5rem;">Progress</div>
+        <div id="megProgressBar" style="background:#3c3c3c; height:20px; border-radius:3px; overflow:hidden;">
+          <div style="background:#0e639c; height:100%; width:0%; transition:width 0.3s;"></div>
+        </div>
+        <div id="megProgressText" style="margin-top:0.5rem; font-size:0.85rem;"></div>
+      </div>
+    </div>
+
+    <div id="megOutputSection" style="margin-top:1rem;">
+      <div style="font-weight:700; margin-bottom:8px;">Output</div>
+      <div id="megOutput" style="background:#0d0d0d; border:1px solid #3c3c3c; border-radius:4px; padding:1rem; min-height:100px; max-height:300px; overflow-y:auto; font-family:monospace; font-size:0.85rem; white-space:pre-wrap;">Ready to convert...</div>
+    </div>
+  </div>
+
+  <!-- Step 4: Results -->
+  <div id="meg-step-4" class="meg-step" style="display:none;">
+    <h3>Results & QA Report</h3>
+    <p class="description">
+      View BIDS conversion results and quality assurance analysis.
+    </p>
+
+    <div class="form-section">
+      <button id="megGenerateReportBtn" class="btn" onclick="megBids.generateReport()">Generate Report</button>
+      <button id="megRefreshReportBtn" class="btn" onclick="megBids.loadReport()" style="margin-left:8px;">Refresh</button>
+    </div>
+
+    <div id="megReportSection" style="margin-top:1rem;">
+      <div id="megReportLoading" style="display:none;">Loading report...</div>
+      <div id="megReportContent" style="display:none;">
+        <div id="megReportSummary" style="background:#1e1e1e; border:1px solid #3c3c3c; border-radius:4px; padding:1rem; margin-bottom:1rem;"></div>
+        <div id="megReportFindings" style="background:#0d0d0d; border:1px solid #3c3c3c; border-radius:4px; padding:1rem; max-height:400px; overflow-y:auto;"></div>
+      </div>
+      <div id="megReportEmpty" class="warn">No report available. Run conversion first, then generate report.</div>
+    </div>
+  </div>
+</div>
+
+<style>
+#meg-bids-container {
+  font-family: monospace;
+  color: #d4d4d4;
+}
+
+.meg-step {
+  display: none;
+}
+
+.meg-step.active {
+  display: block;
+}
+
+/* Config Layout */
+.meg-config-layout {
+  display: grid;
+  grid-template-columns: 45% 55%;
+  gap: 1.5rem;
+  min-height: 500px;
+}
+
+.meg-config-paths {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.meg-config-paths h4 {
+  margin: 0 0 0.5rem 0;
+  color: #d4d4d4;
+}
+
+.meg-config-json {
+  background: #0d0d0d;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Form Groups */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.form-group label {
+  font-size: 0.85rem;
+  color: #9e9e9e;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.form-group.checkbox {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  accent-color: #0e639c;
+}
+
+/* Path Inputs */
+.path-static-display {
+  background: #1e1e1e;
+  border: 1px solid #3c3c3c;
+  border-radius: 3px;
+  padding: 0.35rem 0.5rem;
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.path-input-full {
+  background: #1e1e1e;
+  border: 1px solid #3c3c3c;
+  border-radius: 3px;
+  padding: 0.35rem 0.5rem;
+  color: #d4d4d4;
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+.path-row-compound {
+  display: flex;
+  align-items: center;
+  background: #1e1e1e;
+  border: 1px solid #3c3c3c;
+  border-radius: 3px;
+  padding: 0.35rem 0.5rem;
+}
+
+.path-static-root {
+  color: #666;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.path-input-relative {
+  background: transparent;
+  border: none;
+  color: #d4d4d4;
+  font-family: monospace;
+  font-size: 0.9rem;
+  flex: 1;
+  min-width: 0;
+  outline: none;
+  padding: 0;
+  margin-left: 0;
+}
+
+/* Path Validation */
+.path-validation {
+  font-size: 0.8rem;
+  margin-left: 0.5rem;
+}
+
+.path-validation.valid::before {
+  content: "✓";
+  color: #4ec9b0;
+}
+
+.path-validation.invalid::before {
+  content: "✗";
+  color: #f48771;
+}
+
+.path-validation.checking::before {
+  content: "⏳";
+  color: #cca700;
+}
+
+/* Tags Input */
+.tags-input-container {
+  background: #1e1e1e;
+  border: 1px solid #3c3c3c;
+  border-radius: 3px;
+  padding: 0.35rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-height: 36px;
+}
+
+.tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.tag {
+  background: #3c3c3c;
+  border-radius: 3px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.tag-remove {
+  cursor: pointer;
+  color: #9e9e9e;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.tag-remove:hover {
+  color: #f48771;
+}
+
+.tags-input {
+  background: transparent;
+  border: none;
+  color: #d4d4d4;
+  font-family: monospace;
+  font-size: 0.9rem;
+  flex: 1;
+  min-width: 80px;
+  outline: none;
+  padding: 0.2rem;
+}
+
+/* JSON Editor */
+.json-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.json-header h4 {
+  margin: 0;
+  color: #d4d4d4;
+}
+
+.json-toggle {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.btn-small {
+  background: #3c3c3c;
+  border: none;
+  color: #9e9e9e;
+  padding: 0.25rem 0.75rem;
+  font-family: monospace;
+  font-size: 0.8rem;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.btn-small:hover {
+  background: #4a4a4a;
+}
+
+.btn-small.active {
+  background: #0e639c;
+  color: #fff;
+}
+
+.json-display, .json-editor {
+  flex: 1;
+  background: #1e1e1e;
+  border: 1px solid #3c3c3c;
+  border-radius: 3px;
+  padding: 0.75rem;
+  font-family: monospace;
+  font-size: 0.85rem;
+  overflow: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.json-editor {
+  resize: none;
+  color: #d4d4d4;
+  outline: none;
+}
+
+.validation-status {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  min-height: 1.2rem;
+}
+
+.validation-status.error { color: #f48771; }
+.validation-status.success { color: #4ec9b0; }
+
+/* Action Buttons */
+.form-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.btn {
+  background: #0e639c;
+  color: #fff;
+  border: none;
+  padding: 0.45rem 1rem;
+  font-family: monospace;
+  cursor: pointer;
+  border-radius: 3px;
+  font-size: 0.9rem;
+}
+
+.btn:hover {
+  background: #1177bb;
+}
+
+.btn:disabled {
+  background: #555;
+  cursor: not-allowed;
+}
+
+.btn.primary {
+  background: #238636;
+}
+
+.btn.primary:hover {
+  background: #2ea043;
+}
+
+/* Auto-save Status */
+.auto-save-status {
+  font-size: 0.8rem;
+  color: #4ec9b0;
+  margin-top: 0.5rem;
+}
+
+.auto-save-status.unsaved {
+  color: #cca700;
+}
+
+/* Navigation */
+.view-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid #3c3c3c;
+  padding-bottom: 0.5rem;
+}
+
+.nav-item {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: #888;
+  cursor: pointer;
+  padding: 0.45rem 1rem;
+  font-family: monospace;
+}
+
+.nav-item:hover {
+  color: #ccc;
+}
+
+.nav-item.active {
+  color: #d4d4d4;
+  background: #252526;
+  border-color: #3c3c3c;
+}
+
+/* Generic Styles */
+.form-section {
+  background: #252526;
+  border: 1px solid #3c3c3c;
+  border-radius: 4px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.description {
+  color: #9e9e9e;
+  font-size: 0.88rem;
+  margin-bottom: 1rem;
+}
+
+.muted {
+  color: #9e9e9e;
+  font-size: 0.85rem;
+}
+
+.warn {
+  color: #f48771;
+  font-size: 0.88rem;
+}
+
+.config-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.config-table th,
+.config-table td {
+  border: 1px solid #3c3c3c;
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+}
+
+.config-table th {
+  background: #252526;
+  position: sticky;
+  top: 0;
+}
+
+.config-table td {
+  background: #1e1e1e;
+}
+
+.config-table tr:hover td {
+  background: #2a2a2a;
+}
+
+.hint {
+  color: #9e9e9e;
+  font-size: 0.82rem;
+}
+
+.hint code {
+  background: #3c3c3c;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+}
+</style>
+
+<script>
+(function() {
+  // MEG BIDS Tab Module
+  window.megBids = {
+    currentStep: 1,
+    projectRoot: '',
+    config: {
+      project_name: 'MEG Dataset',
+      raw_dir: 'raw/meg',
+      bids_dir: 'BIDS',
+      tasks: [],
+      conversion_file: 'logs/bids_conversion.tsv',
+      config_file: 'meg_config.json',
+      overwrite: false
+    },
+    tasks: [],
+    tableData: [],
+    tableFile: null,
+    validationTimeouts: {},
+    autoSaveTimeout: null,
+    jsonMode: 'view',
+
+    // Initialize
+    init: async function() {
+      await this.loadProjectRoot();
+      this.loadFromLocalStorage();
+      this.renderTasks();
+      this.updateJsonDisplay();
+      this.validateAllPaths();
+    },
+
+    // Load project root from server
+    loadProjectRoot: async function() {
+      try {
+        const res = await fetch('/meg-get-project-root');
+        const data = await res.json();
+        this.projectRoot = data.project_root || '/data/projects/unknown';
+
+        // Update root displays
+        document.getElementById('megProjectRootDisplay').textContent = this.projectRoot;
+        const rootPrefix = this.projectRoot + '/';
+        document.getElementById('megRootPrefixRaw').textContent = rootPrefix;
+        document.getElementById('megRootPrefixBids').textContent = rootPrefix;
+        document.getElementById('megRootPrefixConv').textContent = rootPrefix;
+        document.getElementById('megRootPrefixConfig').textContent = rootPrefix;
+      } catch (e) {
+        console.error('Failed to load project root:', e);
+      }
+    },
+
+    // Step navigation
+    switchStep: function(step) {
+      this.currentStep = step;
+
+      document.querySelectorAll('#meg-bids-container .nav-item').forEach(el => {
+        el.classList.toggle('active', parseInt(el.dataset.step) === step);
+      });
+
+      document.querySelectorAll('.meg-step').forEach(el => {
+        el.classList.toggle('active', el.id === 'meg-step-' + step);
+      });
+    },
+
+    // Sync form to JSON (live)
+    syncFormToJson: function() {
+      this.config.project_name = document.getElementById('megCfgProjectName').value || 'MEG Dataset';
+      this.config.raw_dir = document.getElementById('megCfgRawDir').value || 'raw/meg';
+      this.config.bids_dir = document.getElementById('megCfgBidsDir').value || 'BIDS';
+      this.config.conversion_file = document.getElementById('megCfgConversionFile').value || 'logs/bids_conversion.tsv';
+      this.config.config_file = document.getElementById('megCfgConfigFile').value || 'meg_config.json';
+      this.config.overwrite = document.getElementById('megCfgOverwrite').checked;
+      this.config.tasks = this.tasks;
+
+      this.updateJsonDisplay();
+      this.debouncedValidatePaths();
+      this.debouncedAutoSave();
+      this.setAutoSaveStatus('unsaved');
+    },
+
+    // Sync JSON to form (on edit blur)
+    syncJsonToForm: function() {
+      try {
+        const jsonText = document.getElementById('megJsonEdit').value;
+        const parsed = JSON.parse(jsonText);
+
+        // Update config
+        this.config = parsed;
+        this.tasks = parsed.tasks || [];
+
+        // Update form fields
+        document.getElementById('megCfgProjectName').value = parsed.project_name || '';
+        document.getElementById('megCfgRawDir').value = parsed.raw_dir || '';
+        document.getElementById('megCfgBidsDir').value = parsed.bids_dir || '';
+        document.getElementById('megCfgConversionFile').value = parsed.conversion_file || '';
+        document.getElementById('megCfgConfigFile').value = parsed.config_file || 'meg_config.json';
+        document.getElementById('megCfgOverwrite').checked = parsed.overwrite || false;
+
+        this.renderTasks();
+        this.updateJsonDisplay();
+        this.validateAllPaths();
+        this.debouncedAutoSave();
+        this.showJsonValidation('Valid JSON', 'success');
+      } catch (e) {
+        this.showJsonValidation('Invalid JSON: ' + e.message, 'error');
+      }
+    },
+
+    // Update JSON display
+    updateJsonDisplay: function() {
+      const jsonText = JSON.stringify(this.config, null, 2);
+      document.getElementById('megJsonView').textContent = jsonText;
+      document.getElementById('megJsonEdit').value = jsonText;
+    },
+
+    // JSON mode toggle
+    setJsonMode: function(mode) {
+      this.jsonMode = mode;
+
+      document.getElementById('megJsonViewBtn').classList.toggle('active', mode === 'view');
+      document.getElementById('megJsonEditBtn').classList.toggle('active', mode === 'edit');
+
+      document.getElementById('megJsonView').style.display = mode === 'view' ? 'block' : 'none';
+      document.getElementById('megJsonEdit').style.display = mode === 'edit' ? 'block' : 'none';
+
+      if (mode === 'edit') {
+        document.getElementById('megJsonEdit').focus();
+      }
+    },
+
+    // Tasks management
+    handleTasksKeydown: function(event) {
+      const input = document.getElementById('megCfgTasksInput');
+
+      if (event.key === 'Enter' || event.key === ',') {
+        event.preventDefault();
+        const value = input.value.trim();
+        if (value && !this.tasks.includes(value)) {
+          this.tasks.push(value);
+          input.value = '';
+          this.renderTasks();
+          this.syncFormToJson();
+        }
+      } else if (event.key === 'Backspace' && !input.value && this.tasks.length > 0) {
+        this.tasks.pop();
+        this.renderTasks();
+        this.syncFormToJson();
+      }
+    },
+
+    removeTask: function(index) {
+      this.tasks.splice(index, 1);
+      this.renderTasks();
+      this.syncFormToJson();
+    },
+
+    renderTasks: function() {
+      const container = document.getElementById('megTasksList');
+      container.innerHTML = this.tasks.map((task, idx) => `
+        <span class="tag">
+          ${task}
+          <span class="tag-remove" onclick="megBids.removeTask(${idx})">&times;</span>
+        </span>
+      `).join('');
+    },
+
+    // Path validation
+    debouncedValidatePaths: function() {
+      clearTimeout(this.validationTimeouts.all);
+      this.validationTimeouts.all = setTimeout(() => this.validateAllPaths(), 300);
+    },
+
+    validateAllPaths: async function() {
+      const paths = [
+        { id: 'raw', path: this.config.raw_dir },
+        { id: 'bids', path: this.config.bids_dir },
+        { id: 'conv', path: this.config.conversion_file }
+      ];
+
+      // Mark all as checking
+      paths.forEach(p => {
+        document.getElementById('val-' + p.id).className = 'path-validation checking';
+      });
+
+      try {
+        const res = await fetch('/meg-validate-paths', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paths: paths })
+        });
+        const data = await res.json();
+
+        Object.entries(data.results || {}).forEach(([id, result]) => {
+          const el = document.getElementById('val-' + id);
+          if (el) {
+            el.className = 'path-validation ' + (result.exists ? 'valid' : 'invalid');
+            el.title = result.resolved || '';
+          }
+        });
+      } catch (e) {
+        console.error('Validation failed:', e);
+      }
+    },
+
+    // Auto-save
+    debouncedAutoSave: function() {
+      clearTimeout(this.autoSaveTimeout);
+      this.autoSaveTimeout = setTimeout(() => this.saveToLocalStorage(), 2000);
+    },
+
+    saveToLocalStorage: function() {
+      const key = 'meg-bids-config-' + (this.projectRoot || 'default');
+      localStorage.setItem(key, JSON.stringify(this.config));
+      this.setAutoSaveStatus('saved');
+    },
+
+    loadFromLocalStorage: function() {
+      const key = 'meg-bids-config-' + (this.projectRoot || 'default');
+      const saved = localStorage.getItem(key);
+      if (saved) {
+        try {
+          this.config = JSON.parse(saved);
+          this.tasks = this.config.tasks || [];
+
+          // Update form
+          document.getElementById('megCfgProjectName').value = this.config.project_name || '';
+          document.getElementById('megCfgRawDir').value = this.config.raw_dir || '';
+          document.getElementById('megCfgBidsDir').value = this.config.bids_dir || '';
+          document.getElementById('megCfgConversionFile').value = this.config.conversion_file || '';
+          document.getElementById('megCfgConfigFile').value = this.config.config_file || 'meg_config.json';
+          document.getElementById('megCfgOverwrite').checked = this.config.overwrite || false;
+
+          this.renderTasks();
+          this.updateJsonDisplay();
+          this.setAutoSaveStatus('saved');
+        } catch (e) {
+          console.error('Failed to load from localStorage:', e);
+        }
+      }
+    },
+
+    setAutoSaveStatus: function(status) {
+      const el = document.getElementById('megAutoSaveStatus');
+      if (status === 'saved') {
+        el.textContent = 'Auto-saved ✓';
+        el.classList.remove('unsaved');
+      } else {
+        el.textContent = 'Unsaved changes';
+        el.classList.add('unsaved');
+      }
+    },
+
+    showJsonValidation: function(message, type) {
+      const el = document.getElementById('megJsonValidation');
+      el.textContent = message;
+      el.className = 'validation-status ' + type;
+      setTimeout(() => {
+        el.textContent = '';
+      }, 3000);
+    },
+
+    // Actions
+    resetDefaults: function() {
+      if (!confirm('Reset all configuration to defaults?')) return;
+
+      this.config = {
+        project_name: 'MEG Dataset',
+        raw_dir: 'raw/meg',
+        bids_dir: 'BIDS',
+        tasks: [],
+        conversion_file: 'logs/bids_conversion.tsv',
+        config_file: 'meg_config.json',
+        overwrite: false
+      };
+      this.tasks = [];
+
+      document.getElementById('megCfgProjectName').value = '';
+      document.getElementById('megCfgRawDir').value = 'raw/meg';
+      document.getElementById('megCfgBidsDir').value = 'BIDS';
+      document.getElementById('megCfgConversionFile').value = 'logs/bids_conversion.tsv';
+      document.getElementById('megCfgConfigFile').value = 'meg_config.json';
+      document.getElementById('megCfgOverwrite').checked = false;
+
+      this.renderTasks();
+      this.updateJsonDisplay();
+      this.validateAllPaths();
+      this.saveToLocalStorage();
+    },
+
+    loadConfigFromFile: async function() {
+      const path = prompt('Enter config file path:', 'meg_config.json');
+      if (!path) return;
+
+      try {
+        const res = await fetch('/meg-load-config?path=' + encodeURIComponent(path));
+        const data = await res.json();
+
+        if (data.error) {
+          alert('Error: ' + data.error);
+          return;
+        }
+
+        // Convert from server config format to minimal format
+        const serverConfig = data.config;
+        this.config = {
+          project_name: serverConfig.Name || 'MEG Dataset',
+          raw_dir: serverConfig.Raw || 'raw/meg',
+          bids_dir: serverConfig.BIDS || 'BIDS',
+          tasks: serverConfig.Tasks || [],
+          conversion_file: serverConfig.Conversion_file || 'logs/bids_conversion.tsv',
+          config_file: serverConfig.config_file || 'meg_config.json',
+          overwrite: serverConfig.overwrite || false
+        };
+        this.tasks = this.config.tasks;
+
+        // Update form
+        document.getElementById('megCfgProjectName').value = this.config.project_name;
+        document.getElementById('megCfgRawDir').value = this.config.raw_dir;
+        document.getElementById('megCfgBidsDir').value = this.config.bids_dir;
+        document.getElementById('megCfgConversionFile').value = this.config.conversion_file;
+        document.getElementById('megCfgConfigFile').value = this.config.config_file;
+        document.getElementById('megCfgOverwrite').checked = this.config.overwrite;
+
+        this.renderTasks();
+        this.updateJsonDisplay();
+        this.validateAllPaths();
+        this.saveToLocalStorage();
+        alert('Config loaded from: ' + path);
+      } catch (e) {
+        alert('Failed to load config: ' + e.message);
+      }
+    },
+
+    saveConfigToFile: async function() {
+      // Convert to server format
+      const serverConfig = {
+        project_name: this.config.project_name,
+        raw_dir: this.config.raw_dir,
+        bids_dir: this.config.bids_dir,
+        tasks: this.config.tasks,
+        conversion_file: this.config.conversion_file,
+        config_file: this.config.config_file,
+        overwrite: this.config.overwrite
+      };
+
+      // Use the configured config file name
+      const configFileName = this.config.config_file || 'meg_config.json';
+      
+      // For now, just show the JSON and let user save manually
+      // In a real implementation, you'd send this to a server endpoint
+      const blob = new Blob([JSON.stringify(serverConfig, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = configFileName.split('/').pop(); // Get filename only
+      a.click();
+      URL.revokeObjectURL(url);
+
+      this.setAutoSaveStatus('saved');
+    },
+
+    // Step 2: Conversion Table
+    runAnalysis: async function() {
+      document.getElementById('megAnalyzeBtn').disabled = true;
+      this.setStatus('megTableStatus', 'Analyzing raw data...');
+
+      try {
+        // Build config for server
+        const serverConfig = {
+          project_name: this.config.project_name,
+          raw_dir: this.config.raw_dir,
+          bids_dir: this.config.bids_dir,
+          tasks: this.config.tasks,
+          conversion_file: this.config.conversion_file,
+          overwrite: this.config.overwrite
+        };
+
+        const res = await fetch('/meg-run-analysis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            config: serverConfig,
+            force_scan: true
+          })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          this.setStatus('megTableStatus', 'Error: ' + data.error, 'warn');
+          return;
+        }
+
+        this.tableData = data.table || [];
+        this.tableFile = data.file;
+        this.renderTable();
+
+        document.getElementById('megSaveTableBtn').disabled = false;
+        this.setStatus('megTableStatus', `Found ${data.row_count} files. Table saved to: ${data.file}`);
+      } catch (e) {
+        this.setStatus('megTableStatus', 'Failed: ' + e.message, 'warn');
+      } finally {
+        document.getElementById('megAnalyzeBtn').disabled = false;
+      }
+    },
+
+    renderTable: function() {
+      const tbody = document.getElementById('megTableBody');
+      const table = document.getElementById('megConversionTable');
+      const empty = document.getElementById('megTableEmpty');
+
+      if (!this.tableData || this.tableData.length === 0) {
+        table.style.display = 'none';
+        empty.style.display = 'block';
+        return;
+      }
+
+      table.style.display = 'table';
+      empty.style.display = 'none';
+
+      tbody.innerHTML = this.tableData.map((row, idx) => `
+        <tr data-idx="${idx}">
+          <td><select onchange="megBids.updateCell(${idx}, 'status', this.value)">
+            <option value="run" ${row.status === 'run' ? 'selected' : ''}>run</option>
+            <option value="check" ${row.status === 'check' ? 'selected' : ''}>check</option>
+            <option value="processed" ${row.status === 'processed' ? 'selected' : ''}>processed</option>
+            <option value="skip" ${row.status === 'skip' ? 'selected' : ''}>skip</option>
+            <option value="missing" ${row.status === 'missing' ? 'selected' : ''}>missing</option>
+          </select></td>
+          <td>${row.participant_from || ''}</td>
+          <td>${row.session_from || ''}</td>
+          <td><input type="text" value="${row.task || ''}" onchange="megBids.updateCell(${idx}, 'task', this.value)" style="width:100px;"></td>
+          <td>${row.run || ''}</td>
+          <td>${row.datatype || ''}</td>
+          <td title="${row.raw_path || ''}/${row.raw_name || ''}">${row.raw_name || ''}</td>
+        </tr>
+      `).join('');
+    },
+
+    updateCell: function(idx, field, value) {
+      if (this.tableData[idx]) {
+        this.tableData[idx][field] = value;
+      }
+    },
+
+    saveTable: async function() {
+      if (!this.tableFile) return;
+
+      document.getElementById('megSaveTableBtn').disabled = true;
+
+      try {
+        const res = await fetch('/meg-save-conversion-table', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            table: this.tableData,
+            file: this.tableFile
+          })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          this.setStatus('megTableStatus', 'Error: ' + data.error, 'warn');
+        } else {
+          this.setStatus('megTableStatus', `Table saved: ${data.rows} rows`);
+        }
+      } catch (e) {
+        this.setStatus('megTableStatus', 'Failed to save: ' + e.message, 'warn');
+      } finally {
+        document.getElementById('megSaveTableBtn').disabled = false;
+      }
+    },
+
+    // Step 3: Make BIDS
+    runBidsify: async function() {
+      const verbose = document.getElementById('megVerboseCheck').checked;
+
+      document.getElementById('megRunBidsifyBtn').disabled = true;
+      document.getElementById('megProgressSection').style.display = 'block';
+      this.setStatus('megConversionStatus', 'Running BIDS conversion...');
+
+      const output = document.getElementById('megOutput');
+      output.textContent = 'Starting conversion...\n';
+
+      try {
+        const serverConfig = {
+          project_name: this.config.project_name,
+          raw_dir: this.config.raw_dir,
+          bids_dir: this.config.bids_dir,
+          tasks: this.config.tasks,
+          conversion_file: this.config.conversion_file,
+          overwrite: this.config.overwrite
+        };
+
+        const res = await fetch('/meg-run-bidsify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            config: serverConfig,
+            verbose: verbose
+          })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          output.textContent += '\nError: ' + data.error;
+          this.setStatus('megConversionStatus', 'Conversion failed', 'warn');
+        } else {
+          output.textContent += '\n' + (data.message || 'Conversion completed!');
+          this.setStatus('megConversionStatus', 'Conversion completed successfully');
+        }
+      } catch (e) {
+        output.textContent += '\nFailed: ' + e.message;
+        this.setStatus('megConversionStatus', 'Conversion failed: ' + e.message, 'warn');
+      } finally {
+        document.getElementById('megRunBidsifyBtn').disabled = false;
+      }
+    },
+
+    // Step 4: Results
+    generateReport: async function() {
+      document.getElementById('megGenerateReportBtn').disabled = true;
+      document.getElementById('megReportLoading').style.display = 'block';
+      document.getElementById('megReportEmpty').style.display = 'none';
+
+      try {
+        const serverConfig = {
+          project_name: this.config.project_name,
+          raw_dir: this.config.raw_dir,
+          bids_dir: this.config.bids_dir,
+          tasks: this.config.tasks,
+          conversion_file: this.config.conversion_file,
+          overwrite: this.config.overwrite
+        };
+
+        const res = await fetch('/meg-run-report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config: serverConfig })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          document.getElementById('megReportEmpty').textContent = 'Error: ' + data.error;
+          document.getElementById('megReportEmpty').style.display = 'block';
+        } else {
+          this.loadReport();
+        }
+      } catch (e) {
+        document.getElementById('megReportEmpty').textContent = 'Failed: ' + e.message;
+        document.getElementById('megReportEmpty').style.display = 'block';
+      } finally {
+        document.getElementById('megGenerateReportBtn').disabled = false;
+        document.getElementById('megReportLoading').style.display = 'none';
+      }
+    },
+
+    loadReport: async function() {
+      try {
+        const serverConfig = {
+          project_name: this.config.project_name,
+          raw_dir: this.config.raw_dir,
+          bids_dir: this.config.bids_dir,
+          tasks: this.config.tasks,
+          conversion_file: this.config.conversion_file,
+          overwrite: this.config.overwrite
+        };
+
+        const res = await fetch('/meg-get-report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config: serverConfig })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          document.getElementById('megReportEmpty').textContent = data.error;
+          document.getElementById('megReportEmpty').style.display = 'block';
+          document.getElementById('megReportContent').style.display = 'none';
+          return;
+        }
+
+        const report = data.report || {};
+        const summary = report['BIDS Summary'] || {};
+
+        document.getElementById('megReportSummary').innerHTML = `
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem;">
+            <div>Total Files: <strong>${summary['Total Files'] || 0}</strong></div>
+            <div>Valid BIDS: <strong style="color:#4ec9b0;">${summary['Valid BIDS Files'] || 0}</strong></div>
+            <div>Invalid BIDS: <strong style="color:#f48771;">${summary['Invalid BIDS Files'] || 0}</strong></div>
+            <div>Compliance: <strong>${summary['Compliance Rate (%)'] || 0}%</strong></div>
+          </div>
+        `;
+
+        const findings = report['QA Analysis']?.findings || [];
+        if (findings.length > 0) {
+          document.getElementById('megReportFindings').innerHTML = findings.map(f => `
+            <div style="padding:0.5rem; border-bottom:1px solid #3c3c3c;">
+              <div style="color:${f.severity === 'error' ? '#f48771' : f.severity === 'warning' ? '#cca700' : '#9e9e9e'};">
+                [${f.severity?.toUpperCase() || 'INFO'}] ${f.issue || 'Unknown issue'}
+              </div>
+              <div style="font-size:0.8rem; color:#9e9e9e; margin-top:0.25rem;">
+                ${f.suggestion || ''}
+              </div>
+            </div>
+          `).join('');
+        } else {
+          document.getElementById('megReportFindings').innerHTML = '<div style="color:#4ec9b0;">✓ No issues found</div>';
+        }
+
+        document.getElementById('megReportEmpty').style.display = 'none';
+        document.getElementById('megReportContent').style.display = 'block';
+      } catch (e) {
+        document.getElementById('megReportEmpty').textContent = 'Failed to load report: ' + e.message;
+        document.getElementById('megReportEmpty').style.display = 'block';
+      }
+    },
+
+    setStatus: function(elementId, message, type) {
+      const el = document.getElementById(elementId);
+      el.textContent = message;
+      el.className = type === 'warn' ? 'warn' : 'muted';
+    }
+  };
+
+  // Initialize on load
+  document.addEventListener('DOMContentLoaded', function() {
+    megBids.init();
+    megBids.switchStep(1);
+  });
+})();
+</script>

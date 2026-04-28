@@ -5,6 +5,8 @@ import json
 import os
 import re
 from pathlib import Path
+import gzip
+import struct
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _HELPER_DIR = os.path.join(
@@ -56,6 +58,36 @@ def read_helper_jsons():
         series_desc = data.get("SeriesDescription", "")
         if re.match(r"^Scout", series_desc, re.IGNORECASE):
             continue
+        # Exclude dose information series which sometimes appear as CT-like
+        # but only contain dose reports or per-slice dose metadata.
+        if re.search(r"\bdose\b", series_desc, re.IGNORECASE):
+            continue
+
+        # Exclude series with ImageType containing DERIVED or SECONDARY,
+        # which typically indicate processed/summary images (e.g., dose
+        # reports, screenshots, QA exports) rather than raw acquisitions.
+        image_type_list = data.get("ImageType") or []
+        if any(t in ("DERIVED", "SECONDARY") for t in image_type_list):
+            continue
+
+        # If dcm2niix produced a .nii.gz alongside the helper JSON, read
+        # its NIfTI header to detect single-slice conversions (e.g. dose
+        # reports converted as 1-slice images). Skip series with nz <= 1.
+        base = os.path.splitext(fname)[0]
+        nii_path = os.path.join(_HELPER_DIR, base + ".nii.gz")
+        try:
+            if os.path.isfile(nii_path):
+                with gzip.open(nii_path, "rb") as fh:
+                    hdr = fh.read(352)
+                if len(hdr) >= 352:
+                    # dims are 16 short ints starting at byte offset 40
+                    dims = struct.unpack_from('<16h', hdr, 40)
+                    nz = int(dims[3]) if len(dims) >= 4 else 0
+                    if nz <= 1:
+                        continue
+        except Exception:
+            # If header read fails, fall back to keeping the row.
+            pass
 
         series_num = data.get("SeriesNumber")
         pulse_seq  = data.get("PulseSequenceName", "")

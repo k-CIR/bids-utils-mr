@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import site
+import tempfile
 
 
 def _read_plan(plan_file):
@@ -68,6 +69,20 @@ def _matches_text(expected, actual):
     return exp.casefold() == act.casefold()
 
 
+def _match_image_type(expected, actual):
+    """Check if actual ImageType list contains all expected ImageType items (case-insensitive)."""
+    if not expected:
+        return True
+    expected_items = expected if isinstance(expected, (list, tuple)) else [expected]
+    actual_items = actual if isinstance(actual, (list, tuple)) else [actual]
+    actual_normalized = [_norm_text(item).casefold() for item in actual_items]
+    for exp_item in expected_items:
+        exp_norm = _norm_text(exp_item).casefold()
+        if exp_norm and exp_norm not in actual_normalized:
+            return False
+    return True
+
+
 def _first_expected(criteria, key):
     value = (criteria or {}).get(key)
     if isinstance(value, list):
@@ -103,6 +118,7 @@ def _resolve_source_dir(src, matched_desc=None):
     criteria = (matched_desc or {}).get("criteria") or {}
     expected_sd = _first_expected(criteria, "SeriesDescription")
     expected_pn = _first_expected(criteria, "ProtocolName")
+    expected_it = criteria.get("ImageType")  # ImageType may be a list
 
     try:
         import pydicom  # type: ignore
@@ -117,6 +133,7 @@ def _resolve_source_dir(src, matched_desc=None):
             "dicom_count": 0,
             "sd_match": 0,
             "pn_match": 0,
+            "it_match": 0,
             "pt_modality": 0,
             "ct_modality": 0,
             "pt_named_dir": os.path.basename(root).lower() in {"pt", "pet"},
@@ -135,7 +152,7 @@ def _resolve_source_dir(src, matched_desc=None):
                     fpath,
                     stop_before_pixels=True,
                     force=True,
-                    specific_tags=["SeriesDescription", "ProtocolName", "Modality"],
+                    specific_tags=["SeriesDescription", "ProtocolName", "Modality", "ImageType"],
                 )
             except Exception:
                 continue
@@ -145,6 +162,18 @@ def _resolve_source_dir(src, matched_desc=None):
                 stat["sd_match"] += 1
             if _matches_text(expected_pn, getattr(ds, "ProtocolName", "")):
                 stat["pn_match"] += 1
+            
+            # Check ImageType if specified in criteria
+            if expected_it:
+                actual_it_raw = getattr(ds, "ImageType", None)
+                # Try to iterate; MultiValue from pydicom may not be a list/tuple
+                try:
+                    actual_it = list(actual_it_raw)
+                except TypeError:
+                    actual_it = [str(actual_it_raw)] if actual_it_raw else []
+                if _match_image_type(expected_it, actual_it):
+                    stat["it_match"] += 1
+            
             modality = _norm_text(getattr(ds, "Modality", "")).upper()
             if modality in {"PT", "PET"}:
                 stat["pt_modality"] += 1
@@ -156,8 +185,8 @@ def _resolve_source_dir(src, matched_desc=None):
 
     def _score(item):
         path, st = item
-        matches = st["sd_match"] + st["pn_match"]
-        has_criteria = bool(expected_sd or expected_pn)
+        matches = st["sd_match"] + st["pn_match"] + st["it_match"]
+        has_criteria = bool(expected_sd or expected_pn or expected_it)
         criteria_hit = matches > 0 if has_criteria else False
         modality_hits = st["ct_modality"] if target == "ct" else st["pt_modality"]
         named_dir_hit = st["ct_named_dir"] if target == "ct" else st["pt_named_dir"]
@@ -173,7 +202,7 @@ def _resolve_source_dir(src, matched_desc=None):
     best_dir, best_stat = max(dir_stats.items(), key=_score)
 
     # If criteria were provided but no folder matched at all, prefer target-like modality/dir with max files.
-    if (expected_sd or expected_pn) and (best_stat["sd_match"] + best_stat["pn_match"] == 0):
+    if (expected_sd or expected_pn or expected_it) and (best_stat["sd_match"] + best_stat["pn_match"] + best_stat["it_match"] == 0):
         modality_key = "ct_modality" if target == "ct" else "pt_modality"
         named_dir_key = "ct_named_dir" if target == "ct" else "pt_named_dir"
         best_dir, _ = max(
@@ -187,11 +216,13 @@ def _resolve_source_dir(src, matched_desc=None):
         )
 
     print(f"Resolved {target.upper()} source folder: {best_dir}")
-    if expected_sd or expected_pn:
+    if expected_sd or expected_pn or expected_it:
+        it_str = ", ".join(expected_it) if isinstance(expected_it, (list, tuple)) else _norm_text(expected_it)
         print(
             "Selection criteria:",
             f"SeriesDescription={expected_sd or '<none>'}",
             f"ProtocolName={expected_pn or '<none>'}",
+            f"ImageType={it_str or '<none>'}",
         )
     return best_dir
 
@@ -217,6 +248,135 @@ def _format_session(value):
     if not value:
         return ""
     return value if value.startswith("ses-") else f"ses-{value}"
+
+
+def _filter_dicoms_by_criteria(src_dir, criteria):
+    """Create a temp dir with only DICOMs matching the criteria (SeriesDescription, ProtocolName, ImageType).
+    
+    Returns the temp directory path, or src_dir if no criteria or filtering isn't possible.
+    The caller is responsible for cleaning up the temp directory.
+    """
+    if not criteria:
+        return src_dir
+    
+    expected_sd = _first_expected(criteria, "SeriesDescription")
+    expected_pn = _first_expected(criteria, "ProtocolName")
+    expected_it_raw = criteria.get("ImageType")
+    
+    # Parse ImageType: can be a list or a comma-separated string
+    expected_it = None
+    if expected_it_raw:
+        if isinstance(expected_it_raw, (list, tuple)):
+            expected_it = [_norm_text(item).upper() for item in expected_it_raw]
+        elif isinstance(expected_it_raw, str):
+            # Split comma-separated string like "ORIGINAL, PRIMARY, AXIAL"
+            expected_it = [_norm_text(item).upper() for item in expected_it_raw.split(",")]
+        expected_it = [item for item in expected_it if item]  # Remove empty strings
+    
+    if not (expected_sd or expected_pn or expected_it):
+        return src_dir
+    
+    try:
+        import pydicom  # type: ignore
+    except Exception:
+        return src_dir
+    
+    # Collect matching DICOM files
+    matching_files = []
+    checked_count = 0
+    dicom_image_types = {}  # For debugging: track what ImageTypes we see
+    for root, _, files in os.walk(src_dir):
+        for fname in files:
+            fpath = os.path.join(root, fname)
+            if not os.path.isfile(fpath):
+                continue
+            try:
+                ds = pydicom.dcmread(
+                    fpath,
+                    stop_before_pixels=True,
+                    force=True,
+                    specific_tags=["SeriesDescription", "ProtocolName", "ImageType"],
+                )
+            except Exception:
+                continue
+            
+            checked_count += 1
+            
+            # Debug: collect ImageType info
+            actual_it_raw = getattr(ds, "ImageType", None)
+            if isinstance(actual_it_raw, (list, tuple)):
+                actual_it_debug = ",".join(str(item) for item in actual_it_raw)
+            else:
+                actual_it_debug = str(actual_it_raw) if actual_it_raw else "<empty>"
+            
+            if actual_it_debug not in dicom_image_types:
+                dicom_image_types[actual_it_debug] = 0
+            dicom_image_types[actual_it_debug] += 1
+            
+            # Check all criteria
+            sd_match = True
+            if expected_sd and not _matches_text(expected_sd, getattr(ds, "SeriesDescription", "")):
+                sd_match = False
+            
+            pn_match = True
+            if expected_pn and not _matches_text(expected_pn, getattr(ds, "ProtocolName", "")):
+                pn_match = False
+            
+            it_match = True
+            if expected_it:
+                actual_it_raw = getattr(ds, "ImageType", None)
+                # Try to iterate; MultiValue from pydicom may not be a list/tuple
+                try:
+                    # If it's iterable (list, tuple, MultiValue, etc), iterate
+                    actual_it = [_norm_text(item).upper() for item in actual_it_raw]
+                except TypeError:
+                    # Not iterable, treat as single value
+                    actual_it = [_norm_text(str(actual_it_raw)).upper()] if actual_it_raw else []
+                
+                # Debug: detailed ImageType matching - only show mismatches
+                matches = all(exp_item in actual_it for exp_item in expected_it)
+                if not matches and checked_count <= 2:  # Log first couple of mismatches for debugging
+                    print(f"[DEBUG DICOM {checked_count}] expected_it={expected_it}, actual_it={actual_it}, matches={matches}")
+                
+                # Check if all expected items are in actual
+                if expected_it and not matches:
+                    it_match = False
+            
+            if sd_match and pn_match and it_match:
+                matching_files.append(fpath)
+    
+    if checked_count == 0:
+        print(f"Warning: No DICOM files found in {src_dir}, using all files")
+        return src_dir
+    
+    if not matching_files:
+        print(f"Warning: No DICOMs matched the criteria (checked {checked_count} files) in {src_dir}, using all files")
+        print(f"  Criteria: SD={expected_sd}, PN={expected_pn}, IT={expected_it}")
+        if dicom_image_types:
+            print(f"  Found ImageTypes in DICOMs: {dicom_image_types}")
+        return src_dir
+    
+    if len(matching_files) == checked_count:
+        # All checked files matched, no need to filter
+        return src_dir
+    
+    # Create temp directory with symlinks to matching files
+    temp_dir = tempfile.mkdtemp(prefix="dcm2niix_filtered_")
+    try:
+        for fpath in matching_files:
+            fname = os.path.basename(fpath)
+            link_path = os.path.join(temp_dir, fname)
+            os.symlink(fpath, link_path)
+        print(f"Created temp DICOM directory with {len(matching_files)} matching files: {temp_dir}")
+        return temp_dir
+    except Exception as e:
+        # Clean up on error
+        try:
+            shutil.rmtree(temp_dir)
+        except Exception:
+            pass
+        print(f"Warning: Failed to create filtered DICOM directory ({e}), using original folder")
+        return src_dir
 
 
 def _build_destination(output_dir, session, matched_desc=None):
@@ -296,6 +456,11 @@ def _build_command(plan, matched_desc):
         dcm2niix_bin = os.environ.get("DCM2NIIX_PATH") or shutil.which("dcm2niix")
         if not dcm2niix_bin:
             raise RuntimeError("dcm2niix is not available; CT conversion requires dcm2niix")
+        
+        # Filter DICOMs to only include those matching the criteria
+        criteria = matched.get("criteria") or {}
+        filtered_src = _filter_dicoms_by_criteria(src, criteria)
+        
         basename = _expected_output_basename(session, matched)
         cmd = [
             dcm2niix_bin,
@@ -307,8 +472,8 @@ def _build_command(plan, matched_desc):
         dcm2niix_options = plan.get("dcm2niix_options") or []
         if dcm2niix_options:
             cmd.extend([str(item) for item in dcm2niix_options])
-        cmd.append(src)
-        return cmd, destination
+        cmd.append(filtered_src)
+        return cmd, destination, filtered_src  # Return filtered_src so caller can clean up
 
     cmd = [
         "python",
@@ -395,7 +560,12 @@ def main(argv=None):
         label = f"description #{desc_index}" if desc_index is not None else f"description {idx}"
 
         try:
-            cmd, destination = _build_command(plan, matched)
+            result = _build_command(plan, matched)
+            if len(result) == 3:
+                cmd, destination, filtered_src = result
+            else:
+                cmd, destination = result
+                filtered_src = None
         except Exception as exc:
             print(f"Failed to build PET command for {label}: {exc}", file=sys.stderr)
             failures += 1
@@ -409,6 +579,14 @@ def main(argv=None):
         print(f"{label} ({suffix}): Executing: {' '.join(cmd)}")
         proc = subprocess.run(cmd, text=True)
         ran_any = True
+        
+        # Clean up temporary DICOM directory if one was created
+        if filtered_src and filtered_src.startswith("/tmp"):
+            try:
+                shutil.rmtree(filtered_src)
+            except Exception as e:
+                print(f"Warning: Failed to clean up temp directory {filtered_src}: {e}")
+        
         if int(proc.returncode) != 0:
             failures += 1
 

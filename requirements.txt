@@ -1,0 +1,10 @@
+# Core dependencies for BIDS Utils MR
+pandas
+mne
+mne_bids
+bids_validator
+tqdm
+numpy
+pydicom
+pypet2bids
+PyYAML

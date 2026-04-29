@@ -29,7 +29,7 @@ TAB_METADATA = {
     "id": "meg-bids",
     "label": "MEG BIDS",
     "order": 2,
-    "requires_path": "raw/meg",
+    "requires_path": "raw/natmeg",
 }
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -42,8 +42,18 @@ def _detect_project_root(script_dir):
     return os.path.realpath(os.path.join(script_dir, "..", "..", ".."))
 
 _PROJECT_ROOT = _detect_project_root(_TAB_DIR)
-_RAW_MEG_DIR = os.path.join(_PROJECT_ROOT, "raw", "meg")
+_RAW_MEG_DIR = os.path.join(_PROJECT_ROOT, "raw", "natmeg")
+_LEGACY_RAW_MEG_DIR = os.path.join(_PROJECT_ROOT, "raw", "meg")
 _LOGS_DIR = os.path.join(_PROJECT_ROOT, "logs")
+
+
+def _detect_raw_meg_dir():
+    """Return the preferred raw MEG directory, with legacy fallback."""
+    if os.path.isdir(_RAW_MEG_DIR):
+        return _RAW_MEG_DIR
+    if os.path.isdir(_LEGACY_RAW_MEG_DIR):
+        return _LEGACY_RAW_MEG_DIR
+    return _RAW_MEG_DIR
 
 
 def _resolve_project_path(rel_path):
@@ -64,9 +74,10 @@ def _resolve_project_path(rel_path):
 def _handle_get_config(h, params):
     """Return project configuration for the tab."""
     config_exists = os.path.exists(os.path.join(_PROJECT_ROOT, "meg_config.json"))
+    raw_meg_dir = _detect_raw_meg_dir()
     h._send_json({
         "project_root": _PROJECT_ROOT,
-        "raw_meg_dir": _RAW_MEG_DIR if os.path.isdir(_RAW_MEG_DIR) else None,
+        "raw_meg_dir": raw_meg_dir if os.path.isdir(raw_meg_dir) else None,
         "logs_dir": _LOGS_DIR,
         "config_exists": config_exists,
         "default_config": get_default_config(),
@@ -74,9 +85,11 @@ def _handle_get_config(h, params):
 
 
 def _handle_get_project_root(h, params):
-    """Return the detected project root path."""
+    """Return the detected project root path and project name."""
+    project_name = os.path.basename(_PROJECT_ROOT)
     h._send_json({
         "project_root": _PROJECT_ROOT,
+        "project_name": project_name,
     })
 
 
@@ -149,7 +162,7 @@ def _handle_get_conversion_table(h, params):
             return
     else:
         config = get_default_config()
-        config['Raw'] = _RAW_MEG_DIR
+        config['Raw'] = _detect_raw_meg_dir()
         config['BIDS'] = os.path.join(_PROJECT_ROOT, "BIDS")
         config['Root'] = _PROJECT_ROOT
 
@@ -203,7 +216,7 @@ def _handle_run_analysis(h, body):
         config.update({
             'Name': client_config.get('project_name', 'MEG Dataset'),
             'Root': _PROJECT_ROOT,
-            'Raw': client_config.get('raw_dir', 'raw/meg'),
+            'Raw': client_config.get('raw_dir', 'raw/natmeg'),
             'BIDS': client_config.get('bids_dir', 'BIDS'),
             'Tasks': client_config.get('tasks', []),
             'Conversion_file': client_config.get('conversion_file', 'logs/bids_conversion.tsv'),
@@ -212,7 +225,7 @@ def _handle_run_analysis(h, body):
         })
     else:
         config = get_default_config()
-        config['Raw'] = _RAW_MEG_DIR
+        config['Raw'] = _detect_raw_meg_dir()
         config['BIDS'] = os.path.join(_PROJECT_ROOT, "BIDS")
         config['Root'] = _PROJECT_ROOT
 
@@ -246,7 +259,7 @@ def _handle_run_bidsify(h, body):
         config.update({
             'Name': client_config.get('project_name', 'MEG Dataset'),
             'Root': _PROJECT_ROOT,
-            'Raw': client_config.get('raw_dir', 'raw/meg'),
+            'Raw': client_config.get('raw_dir', 'raw/natmeg'),
             'BIDS': client_config.get('bids_dir', 'BIDS'),
             'Tasks': client_config.get('tasks', []),
             'Conversion_file': client_config.get('conversion_file', 'logs/bids_conversion.tsv'),
@@ -255,7 +268,7 @@ def _handle_run_bidsify(h, body):
         })
     else:
         config = get_default_config()
-        config['Raw'] = _RAW_MEG_DIR
+        config['Raw'] = _detect_raw_meg_dir()
         config['BIDS'] = os.path.join(_PROJECT_ROOT, "BIDS")
         config['Root'] = _PROJECT_ROOT
 
@@ -282,7 +295,7 @@ def _handle_run_report(h, body):
         config.update({
             'Name': client_config.get('project_name', 'MEG Dataset'),
             'Root': _PROJECT_ROOT,
-            'Raw': client_config.get('raw_dir', 'raw/meg'),
+            'Raw': client_config.get('raw_dir', 'raw/natmeg'),
             'BIDS': client_config.get('bids_dir', 'BIDS'),
             'Tasks': client_config.get('tasks', []),
             'Conversion_file': client_config.get('conversion_file', 'logs/bids_conversion.tsv'),
@@ -291,7 +304,7 @@ def _handle_run_report(h, body):
         })
     else:
         config = get_default_config()
-        config['Raw'] = _RAW_MEG_DIR
+        config['Raw'] = _detect_raw_meg_dir()
         config['BIDS'] = os.path.join(_PROJECT_ROOT, "BIDS")
         config['Root'] = _PROJECT_ROOT
 
@@ -335,7 +348,7 @@ def _handle_get_report(h, body):
         config.update({
             'Name': client_config.get('project_name', 'MEG Dataset'),
             'Root': _PROJECT_ROOT,
-            'Raw': client_config.get('raw_dir', 'raw/meg'),
+            'Raw': client_config.get('raw_dir', 'raw/natmeg'),
             'BIDS': client_config.get('bids_dir', 'BIDS'),
             'Tasks': client_config.get('tasks', []),
             'Conversion_file': client_config.get('conversion_file', 'logs/bids_conversion.tsv'),

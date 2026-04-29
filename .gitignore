@@ -4,3 +4,6 @@ tabs/*/*.csv
 dcm2bids_config_mr.json
 dcm2bids_config_pet.json
 .pet2bids-container-home/
+
+.venv
+.DS_Store

@@ -31,15 +31,9 @@
       <div class="meg-config-paths">
         <h4>Configuration Paths</h4>
 
-        <!-- Project Name -->
-        <div class="form-group">
-          <label>Project Name</label>
-          <input type="text" id="megCfgProjectName" class="path-input-full" placeholder="MEG Dataset" oninput="megBids.syncFormToJson()">
-        </div>
-
         <!-- Project Root Display -->
         <div class="form-group">
-          <label>Project Root</label>
+          <label>Project <span class="project-name-display" id="megProjectNameDisplay">...</span></label>
           <div class="path-static-display" id="megProjectRootDisplay">/data/projects/...</div>
         </div>
 
@@ -48,7 +42,7 @@
           <label>Raw Directory <span id="val-raw" class="path-validation"></span></label>
           <div class="path-row-compound">
             <span class="path-static-root" id="megRootPrefixRaw">/data/projects/.../</span>
-            <input type="text" id="megCfgRawDir" class="path-input-relative" placeholder="raw/meg" value="raw/meg" oninput="megBids.syncFormToJson()">
+            <input type="text" id="megCfgRawDir" class="path-input-relative" placeholder="raw/natmeg" value="raw/natmeg" oninput="megBids.syncFormToJson()">
           </div>
         </div>
 
@@ -287,6 +281,13 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.project-name-display {
+  font-size: 1rem;
+  color: #d4d4d4;
+  font-weight: 700;
+  margin-left: 0.25rem;
 }
 
 .form-group.checkbox {
@@ -635,13 +636,23 @@
 
 <script>
 (function() {
+  // Get auth token from URL query params or main page (required for all server fetches)
+  function _getToken() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('token') || (window.authToken || '');
+  }
+  function _p(path) {
+    const token = _getToken();
+    return path + (token ? (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token) : '');
+  }
+
   // MEG BIDS Tab Module
   window.megBids = {
     currentStep: 1,
     projectRoot: '',
     config: {
       project_name: 'MEG Dataset',
-      raw_dir: 'raw/meg',
+      raw_dir: 'raw/natmeg',
       bids_dir: 'BIDS',
       tasks: [],
       conversion_file: 'logs/bids_conversion.tsv',
@@ -657,7 +668,7 @@
 
     // Initialize
     init: async function() {
-      await this.loadProjectRoot();
+      const rootData = await this.loadProjectRoot();
       this.loadFromLocalStorage();
       this.renderTasks();
       this.updateJsonDisplay();
@@ -667,7 +678,7 @@
     // Load project root from server
     loadProjectRoot: async function() {
       try {
-        const res = await fetch('/meg-get-project-root');
+        const res = await fetch(_p('/meg-get-project-root'));
         const data = await res.json();
         this.projectRoot = data.project_root || '/data/projects/unknown';
 
@@ -678,8 +689,17 @@
         document.getElementById('megRootPrefixBids').textContent = rootPrefix;
         document.getElementById('megRootPrefixConv').textContent = rootPrefix;
         document.getElementById('megRootPrefixConfig').textContent = rootPrefix;
+
+        // Set project name (from server, not user-editable)
+        if (data.project_name) {
+          this.config.project_name = data.project_name;
+          document.getElementById('megProjectNameDisplay').textContent = data.project_name;
+        }
+
+        return data;
       } catch (e) {
         console.error('Failed to load project root:', e);
+        return null;
       }
     },
 
@@ -698,8 +718,7 @@
 
     // Sync form to JSON (live)
     syncFormToJson: function() {
-      this.config.project_name = document.getElementById('megCfgProjectName').value || 'MEG Dataset';
-      this.config.raw_dir = document.getElementById('megCfgRawDir').value || 'raw/meg';
+      this.config.raw_dir = document.getElementById('megCfgRawDir').value || 'raw/natmeg';
       this.config.bids_dir = document.getElementById('megCfgBidsDir').value || 'BIDS';
       this.config.conversion_file = document.getElementById('megCfgConversionFile').value || 'logs/bids_conversion.tsv';
       this.config.config_file = document.getElementById('megCfgConfigFile').value || 'meg_config.json';
@@ -718,12 +737,13 @@
         const jsonText = document.getElementById('megJsonEdit').value;
         const parsed = JSON.parse(jsonText);
 
-        // Update config
+        // Update config (project_name is server-defined, preserve it)
+        const savedProjectName = this.config.project_name;
         this.config = parsed;
+        this.config.project_name = savedProjectName;
         this.tasks = parsed.tasks || [];
 
         // Update form fields
-        document.getElementById('megCfgProjectName').value = parsed.project_name || '';
         document.getElementById('megCfgRawDir').value = parsed.raw_dir || '';
         document.getElementById('megCfgBidsDir').value = parsed.bids_dir || '';
         document.getElementById('megCfgConversionFile').value = parsed.conversion_file || '';
@@ -817,7 +837,7 @@
       });
 
       try {
-        const res = await fetch('/meg-validate-paths', {
+        const res = await fetch(_p('/meg-validate-paths'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ paths: paths })
@@ -853,11 +873,13 @@
       const saved = localStorage.getItem(key);
       if (saved) {
         try {
-          this.config = JSON.parse(saved);
+          const savedConfig = JSON.parse(saved);
+          const savedProjectName = this.config.project_name;
+          this.config = savedConfig;
+          this.config.project_name = savedProjectName;
           this.tasks = this.config.tasks || [];
 
           // Update form
-          document.getElementById('megCfgProjectName').value = this.config.project_name || '';
           document.getElementById('megCfgRawDir').value = this.config.raw_dir || '';
           document.getElementById('megCfgBidsDir').value = this.config.bids_dir || '';
           document.getElementById('megCfgConversionFile').value = this.config.conversion_file || '';
@@ -897,9 +919,10 @@
     resetDefaults: function() {
       if (!confirm('Reset all configuration to defaults?')) return;
 
+      const savedProjectName = this.config.project_name;
       this.config = {
-        project_name: 'MEG Dataset',
-        raw_dir: 'raw/meg',
+        project_name: savedProjectName,
+        raw_dir: 'raw/natmeg',
         bids_dir: 'BIDS',
         tasks: [],
         conversion_file: 'logs/bids_conversion.tsv',
@@ -908,8 +931,7 @@
       };
       this.tasks = [];
 
-      document.getElementById('megCfgProjectName').value = '';
-      document.getElementById('megCfgRawDir').value = 'raw/meg';
+      document.getElementById('megCfgRawDir').value = 'raw/natmeg';
       document.getElementById('megCfgBidsDir').value = 'BIDS';
       document.getElementById('megCfgConversionFile').value = 'logs/bids_conversion.tsv';
       document.getElementById('megCfgConfigFile').value = 'meg_config.json';
@@ -926,7 +948,7 @@
       if (!path) return;
 
       try {
-        const res = await fetch('/meg-load-config?path=' + encodeURIComponent(path));
+        const res = await fetch(_p('/meg-load-config?path=' + encodeURIComponent(path)));
         const data = await res.json();
 
         if (data.error) {
@@ -936,9 +958,10 @@
 
         // Convert from server config format to minimal format
         const serverConfig = data.config;
+        const savedProjectName = this.config.project_name;
         this.config = {
-          project_name: serverConfig.Name || 'MEG Dataset',
-          raw_dir: serverConfig.Raw || 'raw/meg',
+          project_name: savedProjectName,
+          raw_dir: serverConfig.Raw || 'raw/natmeg',
           bids_dir: serverConfig.BIDS || 'BIDS',
           tasks: serverConfig.Tasks || [],
           conversion_file: serverConfig.Conversion_file || 'logs/bids_conversion.tsv',
@@ -948,7 +971,6 @@
         this.tasks = this.config.tasks;
 
         // Update form
-        document.getElementById('megCfgProjectName').value = this.config.project_name;
         document.getElementById('megCfgRawDir').value = this.config.raw_dir;
         document.getElementById('megCfgBidsDir').value = this.config.bids_dir;
         document.getElementById('megCfgConversionFile').value = this.config.conversion_file;
@@ -1009,7 +1031,7 @@
           overwrite: this.config.overwrite
         };
 
-        const res = await fetch('/meg-run-analysis', {
+        const res = await fetch(_p('/meg-run-analysis'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1082,7 +1104,7 @@
       document.getElementById('megSaveTableBtn').disabled = true;
 
       try {
-        const res = await fetch('/meg-save-conversion-table', {
+        const res = await fetch(_p('/meg-save-conversion-table'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1125,7 +1147,7 @@
           overwrite: this.config.overwrite
         };
 
-        const res = await fetch('/meg-run-bidsify', {
+        const res = await fetch(_p('/meg-run-bidsify'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1166,7 +1188,7 @@
           overwrite: this.config.overwrite
         };
 
-        const res = await fetch('/meg-run-report', {
+        const res = await fetch(_p('/meg-run-report'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ config: serverConfig })
@@ -1199,7 +1221,7 @@
           overwrite: this.config.overwrite
         };
 
-        const res = await fetch('/meg-get-report', {
+        const res = await fetch(_p('/meg-get-report'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ config: serverConfig })
@@ -1257,9 +1279,14 @@
   };
 
   // Initialize on load
-  document.addEventListener('DOMContentLoaded', function() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() {
+      megBids.init();
+      megBids.switchStep(1);
+    });
+  } else {
     megBids.init();
     megBids.switchStep(1);
-  });
+  }
 })();
 </script>

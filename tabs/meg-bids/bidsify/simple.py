@@ -47,7 +47,7 @@ def load_minimal_config(config_path: str) -> Dict[str, Any]:
     Expected format:
     {
         "project_name": "My Study",
-        "raw_dir": "raw/meg",
+        "raw_dir": "raw/natmeg",
         "bids_dir": "BIDS",
         "tasks": ["rest", "task1"],
         "conversion_file": "logs/bids_conversion.tsv",

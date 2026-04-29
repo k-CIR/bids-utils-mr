@@ -434,7 +434,7 @@ def _find_existing_output(dest_dir, session, matched_desc):
     return None
 
 
-def _build_command(plan, matched_desc):
+def _build_command(plan, matched_desc, clobber=False):
     session = plan.get("session") or {}
     launch = plan.get("launch") or {}
     matched = matched_desc if isinstance(matched_desc, dict) else {}
@@ -466,9 +466,13 @@ def _build_command(plan, matched_desc):
             dcm2niix_bin,
             "-b", "y",
             "-z", "y",
+        ]
+        if clobber:
+            cmd.extend(["-w", "1"])
+        cmd.extend([
             "-o", destination,
             "-f", basename,
-        ]
+        ])
         dcm2niix_options = plan.get("dcm2niix_options") or []
         if dcm2niix_options:
             cmd.extend([str(item) for item in dcm2niix_options])
@@ -560,7 +564,7 @@ def main(argv=None):
         label = f"description #{desc_index}" if desc_index is not None else f"description {idx}"
 
         try:
-            result = _build_command(plan, matched)
+            result = _build_command(plan, matched, clobber=clobber)
             if len(result) == 3:
                 cmd, destination, filtered_src = result
             else:

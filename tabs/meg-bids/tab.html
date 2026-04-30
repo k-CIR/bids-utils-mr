@@ -122,53 +122,88 @@
     </div>
   </div>
 
-  <!-- Step 2: Editor -->
-  <div id="meg-step-2" class="meg-step" style="display:none;">
-    <h3>Conversion Table Editor</h3>
-    <p class="description">
-      Review and edit the conversion table. Mark files to process, skip, or check.
-      Click cells to edit values inline.
-    </p>
+   <!-- Step 2: Editor -->
+   <div id="meg-step-2" class="meg-step" style="display:none;">
+     <h3>Conversion Table Editor</h3>
+     <p class="description">
+       Review and edit the conversion table. Mark files to process, skip, or check.
+       Click cells to edit values inline.
+     </p>
 
-    <div class="form-section">
-      <div style="display:flex; gap:8px; margin-bottom:1rem;">
-        <button id="megAnalyzeBtn" class="btn" onclick="megBids.runAnalysis()">Analyze / Refresh</button>
-        <button id="megSaveTableBtn" class="btn primary" onclick="megBids.saveTable()" disabled>Save Table</button>
-      </div>
-      <div id="megTableStatus" class="muted"></div>
-    </div>
+     <div class="form-section">
+       <div style="display:flex; gap:8px; margin-bottom:1rem;">
+         <button id="megAnalyzeBtn" class="btn" onclick="megBids.runAnalysis()">Analyze / Refresh</button>
+         <button id="megSaveTableBtn" class="btn primary" onclick="megBids.saveTable()" disabled>Save Table</button>
+       </div>
+       <div id="megTableStatus" class="muted"></div>
+     </div>
 
-    <div id="megTableContainer" style="overflow-x:auto; max-height:500px; overflow-y:auto;">
-      <table id="megConversionTable" class="config-table" style="display:none;">
-        <thead>
-          <tr>
-            <th>Status</th>
-            <th>Participant</th>
-            <th>Session</th>
-            <th>Task</th>
-            <th>Run</th>
-            <th>Datatype</th>
-            <th>Raw File</th>
-          </tr>
-        </thead>
-        <tbody id="megTableBody"></tbody>
-      </table>
-      <div id="megTableEmpty" class="warn" style="display:none;">
-        No conversion table loaded. Click "Analyze / Refresh" to scan for files.
-      </div>
-    </div>
+     <!-- Search -->
+     <div style="margin-bottom:1rem;">
+       <input type="text" id="megSearchInput" placeholder="Search table..." style="width:100%; padding:6px; background:#1e1e1e; border:1px solid #3c3c3c; color:#d4d4d4; border-radius:3px;">
+     </div>
 
-    <div class="form-section" style="margin-top:1rem;">
-      <small class="hint">
-        <strong>Status values:</strong>
-        <code>run</code> = ready to convert,
-        <code>check</code> = needs review,
-        <code>processed</code> = already converted,
-        <code>skip</code> = ignore,
-        <code>missing</code> = source file not found
-      </small>
-    </div>
-  </div>
+     <!-- Filters -->
+     <div style="display:flex; gap:8px; margin-bottom:1rem; flex-wrap:wrap;">
+       <select id="megSubjectFilter" onchange="megBids.filterTable()" style="background:#1e1e1e; border:1px solid #3c3c3c; color:#d4d4d4; padding:4px;">
+         <option value="">All Subjects</option>
+       </select>
+       <select id="megTaskFilter" onchange="megBids.filterTable()" style="background:#1e1e1e; border:1px solid #3c3c3c; color:#d4d4d4; padding:4px;">
+         <option value="">All Tasks</option>
+       </select>
+       <select id="megStatusFilter" onchange="megBids.filterTable()" style="background:#1e1e1e; border:1px solid #3c3c3c; color:#d4d4d4; padding:4px;">
+         <option value="">All Statuses</option>
+         <option value="run">run</option>
+         <option value="check">check</option>
+         <option value="processed">processed</option>
+         <option value="skip">skip</option>
+       </select>
+     </div>
+
+     <!-- Batch Actions -->
+     <div id="megBatchActions" style="display:none; padding:8px; background:#252526; border:1px solid #3c3c3c; border-radius:4px; margin-bottom:1rem;">
+       <span id="megSelectedCount" style="margin-right:8px;">0 selected</span>
+       <select id="megBatchStatus" style="background:#1e1e1e; border:1px solid #3c3c3c; color:#d4d4d4; padding:4px; margin-right:8px;">
+         <option value="run">run</option>
+         <option value="check">check</option>
+         <option value="processed">processed</option>
+         <option value="skip">skip</option>
+       </select>
+       <button class="btn" onclick="megBids.batchUpdateStatus()">Apply Status</button>
+     </div>
+
+     <div id="megTableContainer" style="overflow-x:auto; max-height:500px; overflow-y:auto;">
+       <table id="megConversionTable" class="config-table" style="display:none;">
+         <thead>
+           <tr>
+             <th></th>
+             <th>Status</th>
+             <th>Participant</th>
+             <th>Session</th>
+             <th>Task</th>
+             <th>Run</th>
+             <th>Datatype</th>
+             <th>Raw File</th>
+           </tr>
+         </thead>
+         <tbody id="megTableBody"></tbody>
+       </table>
+       <div id="megTableEmpty" class="warn" style="display:none;">
+         No conversion table loaded. Click "Analyze / Refresh" to scan for files.
+       </div>
+     </div>
+
+     <div class="form-section" style="margin-top:1rem;">
+       <small class="hint">
+         <strong>Status values:</strong>
+         <code>run</code> = ready to convert,
+         <code>check</code> = needs review,
+         <code>processed</code> = already converted,
+         <code>skip</code> = ignore,
+         <code>missing</code> = source file not found
+       </small>
+     </div>
+   </div>
 
   <!-- Step 3: Make BIDS -->
   <div id="meg-step-3" class="meg-step" style="display:none;">
@@ -177,15 +212,21 @@
       Run the BIDS conversion pipeline. This will convert all files marked as 'run' to BIDS format.
     </p>
 
-    <div class="form-section">
-      <div style="display:flex; gap:8px; margin-bottom:1rem; align-items:center;">
-        <button id="megRunBidsifyBtn" class="btn primary" onclick="megBids.runBidsify()">Run BIDS Conversion</button>
-        <label style="display:flex; align-items:center; gap:4px; font-size:0.85rem;">
-          <input type="checkbox" id="megVerboseCheck"> Verbose output
-        </label>
-      </div>
-      <div id="megConversionStatus" class="muted"></div>
-    </div>
+     <div class="form-section">
+       <div style="display:flex; gap:8px; margin-bottom:1rem; align-items:center;">
+         <button id="megRunBidsifyBtn" class="btn primary" onclick="megBids.runBidsify()">Run BIDS Conversion</button>
+         <label style="display:flex; align-items:center; gap:4px; font-size:0.85rem;">
+           <input type="checkbox" id="megVerboseCheck"> Verbose output
+         </label>
+       </div>
+       <div id="megConversionStatus" class="muted"></div>
+     </div>
+
+     <!-- Job Status -->
+     <div id="megJobStatus" style="display:none; margin-bottom:1rem; padding:8px; background:#252526; border:1px solid #3c3c3c; border-radius:4px;">
+       <span>Job ID: <code id="megJobId" style="background:#1e1e1e; padding:2px 6px;"></code></span>
+       <span id="megJobStatusText" style="margin-left:8px;"></span>
+     </div>
 
     <div id="megProgressSection" style="display:none; margin-top:1rem;">
       <div style="background:#1e1e1e; border:1px solid #3c3c3c; border-radius:4px; padding:1rem;">
@@ -215,14 +256,34 @@
       <button id="megRefreshReportBtn" class="btn" onclick="megBids.loadReport()" style="margin-left:8px;">Refresh</button>
     </div>
 
-    <div id="megReportSection" style="margin-top:1rem;">
-      <div id="megReportLoading" style="display:none;">Loading report...</div>
-      <div id="megReportContent" style="display:none;">
-        <div id="megReportSummary" style="background:#1e1e1e; border:1px solid #3c3c3c; border-radius:4px; padding:1rem; margin-bottom:1rem;"></div>
-        <div id="megReportFindings" style="background:#0d0d0d; border:1px solid #3c3c3c; border-radius:4px; padding:1rem; max-height:400px; overflow-y:auto;"></div>
-      </div>
-      <div id="megReportEmpty" class="warn">No report available. Run conversion first, then generate report.</div>
-    </div>
+     <div id="megReportSection" style="margin-top:1rem;">
+       <!-- Stats Dashboard -->
+       <div id="megStatsDashboard" style="display:flex; gap:16px; margin-bottom:1rem;">
+         <div style="flex:1; padding:12px; background:#252526; border:1px solid #3c3c3c; border-radius:4px;">
+           <div style="font-size:0.85rem; color:#9e9e9e;">Subjects</div>
+           <div id="megStatSubjects" style="font-size:1.5rem; font-weight:700;">-</div>
+         </div>
+         <div style="flex:1; padding:12px; background:#252526; border:1px solid #3c3c3c; border-radius:4px;">
+           <div style="font-size:0.85rem; color:#9e9e9e;">Sessions</div>
+           <div id="megStatSessions" style="font-size:1.5rem; font-weight:700;">-</div>
+         </div>
+         <div style="flex:1; padding:12px; background:#252526; border:1px solid #3c3c3c; border-radius:4px;">
+           <div style="font-size:0.85rem; color:#9e9e9e;">Tasks</div>
+           <div id="megStatTasks" style="font-size:1.5rem; font-weight:700;">-</div>
+         </div>
+         <div style="flex:1; padding:12px; background:#252526; border:1px solid #3c3c3c; border-radius:4px;">
+           <div style="font-size:0.85rem; color:#9e9e9e;">Compliance</div>
+           <div id="megStatCompliance" style="font-size:1.5rem; font-weight:700;">-</div>
+         </div>
+       </div>
+
+       <div id="megReportLoading" style="display:none;">Loading report...</div>
+       <div id="megReportContent" style="display:none;">
+         <div id="megReportSummary" style="background:#1e1e1e; border:1px solid #3c3c3c; border-radius:4px; padding:1rem; margin-bottom:1rem;"></div>
+         <div id="megReportFindings" style="background:#0d0d0d; border:1px solid #3c3c3c; border-radius:4px; padding:1rem; max-height:400px; overflow-y:auto;"></div>
+       </div>
+       <div id="megReportEmpty" class="warn">No report available. Run conversion first, then generate report.</div>
+     </div>
   </div>
 </div>
 
@@ -1278,15 +1339,18 @@
     }
   };
 
-  // Initialize on load
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() {
-      megBids.init();
-      megBids.switchStep(1);
-    });
-  } else {
-    megBids.init();
-    megBids.switchStep(1);
-  }
+   // Initialize on load
+   if (document.readyState === 'loading') {
+     document.addEventListener('DOMContentLoaded', function() {
+       megBids.init();
+       megBids.switchStep(1);
+     });
+   } else {
+     megBids.init();
+     megBids.switchStep(1);
+   }
 })();
 </script>
+<script src="/meg-tab-editor.js"></script>
+<script src="/meg-tab-execute.js"></script>
+<script src="/meg-tab-report.js"></script>

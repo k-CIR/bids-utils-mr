@@ -156,10 +156,27 @@
           const savedConfig = JSON.parse(saved);
           this.config = { ...this.config, ...savedConfig };
           this.updateFormFromConfig();
+          this.updateJsonDisplay();
+          this.setAutoSaveStatus('saved');
         } catch (e) {
           console.error('Failed to load from localStorage:', e);
+          // Fall through to default display
+          this.setDefaultConfig();
         }
+      } else {
+        // No saved config - show defaults in JSON viewer
+        this.setDefaultConfig();
       }
+    },
+
+    // Set default configuration
+    setDefaultConfig: function() {
+      // Config already has defaults, just ensure JSON display is updated
+      this.updateFormFromConfig();
+      this.renderTasks();
+      this.updateJsonDisplay();
+      this.validateAllPaths();
+      this.setAutoSaveStatus('saved');
     },
 
     // Save config to localStorage

@@ -122,13 +122,13 @@
     </div>
   </div>
 
-   <!-- Step 2: Editor -->
-   <div id="meg-step-2" class="meg-step" style="display:none;">
-     <h3>Conversion Table Editor</h3>
-     <p class="description">
-       Review and edit the conversion table. Mark files to process, skip, or check.
-       Click cells to edit values inline.
-     </p>
+    <!-- Step 2: Editor -->
+    <div id="meg-step-2" class="meg-step" style="display:none;">
+      <h3>Conversion Table Editor</h3>
+      <p class="description">
+        Review and edit the conversion table. Click any row for advanced editing with all BIDS options.
+        Use filters to narrow results. Select multiple rows for batch operations.
+      </p>
 
      <div class="form-section">
        <div style="display:flex; gap:8px; margin-bottom:1rem;">
@@ -143,55 +143,62 @@
        <input type="text" id="megSearchInput" placeholder="Search table..." style="width:100%; padding:6px; background:#1e1e1e; border:1px solid #3c3c3c; color:#d4d4d4; border-radius:3px;">
      </div>
 
-     <!-- Filters -->
-     <div style="display:flex; gap:8px; margin-bottom:1rem; flex-wrap:wrap;">
-       <select id="megSubjectFilter" onchange="megBids.filterTable()" style="background:#1e1e1e; border:1px solid #3c3c3c; color:#d4d4d4; padding:4px;">
-         <option value="">All Subjects</option>
-       </select>
-       <select id="megTaskFilter" onchange="megBids.filterTable()" style="background:#1e1e1e; border:1px solid #3c3c3c; color:#d4d4d4; padding:4px;">
-         <option value="">All Tasks</option>
-       </select>
-       <select id="megStatusFilter" onchange="megBids.filterTable()" style="background:#1e1e1e; border:1px solid #3c3c3c; color:#d4d4d4; padding:4px;">
-         <option value="">All Statuses</option>
-         <option value="run">run</option>
-         <option value="check">check</option>
-         <option value="processed">processed</option>
-         <option value="skip">skip</option>
-       </select>
-     </div>
+      <!-- Filters -->
+      <div style="display:flex; gap:8px; margin-bottom:0.5rem; flex-wrap:wrap; align-items:center;">
+        <select id="megSubjectFilter" style="background:#1e1e1e; border:1px solid #3c3c3c; color:#d4d4d4; padding:4px;">
+          <option value="">All Subjects</option>
+        </select>
+        <select id="megTaskFilter" style="background:#1e1e1e; border:1px solid #3c3c3c; color:#d4d4d4; padding:4px;">
+          <option value="">All Tasks</option>
+        </select>
+        <select id="megStatusFilter" style="background:#1e1e1e; border:1px solid #3c3c3c; color:#d4d4d4; padding:4px;">
+          <option value="">All Statuses</option>
+          <option value="run">run</option>
+          <option value="check">check</option>
+          <option value="processed">processed</option>
+          <option value="skip">skip</option>
+          <option value="missing">missing</option>
+        </select>
+        <button id="megClearFiltersBtn" class="btn-small" title="Clear all filters">Clear</button>
+        <span id="megRowCount" style="margin-left:auto; font-size:0.85rem; color:#9e9e9e;"></span>
+      </div>
 
-     <!-- Batch Actions -->
-     <div id="megBatchActions" style="display:none; padding:8px; background:#252526; border:1px solid #3c3c3c; border-radius:4px; margin-bottom:1rem;">
-       <span id="megSelectedCount" style="margin-right:8px;">0 selected</span>
-       <select id="megBatchStatus" style="background:#1e1e1e; border:1px solid #3c3c3c; color:#d4d4d4; padding:4px; margin-right:8px;">
-         <option value="run">run</option>
-         <option value="check">check</option>
-         <option value="processed">processed</option>
-         <option value="skip">skip</option>
-       </select>
-       <button class="btn" onclick="megBids.batchUpdateStatus()">Apply Status</button>
-     </div>
+      <!-- Filter Pills -->
+      <div id="megFilterPills" style="margin-bottom:1rem; display:flex; gap:4px; flex-wrap:wrap;"></div>
 
-     <div id="megTableContainer" style="overflow-x:auto; max-height:500px; overflow-y:auto;">
-       <table id="megConversionTable" class="config-table" style="display:none;">
-         <thead>
-           <tr>
-             <th></th>
-             <th>Status</th>
-             <th>Participant</th>
-             <th>Session</th>
-             <th>Task</th>
-             <th>Run</th>
-             <th>Datatype</th>
-             <th>Raw File</th>
-           </tr>
-         </thead>
-         <tbody id="megTableBody"></tbody>
-       </table>
-       <div id="megTableEmpty" class="warn" style="display:none;">
-         No conversion table loaded. Click "Analyze / Refresh" to scan for files.
-       </div>
-     </div>
+      <!-- Batch Actions -->
+      <div id="megBatchActions" style="display:none; padding:8px; background:#252526; border:1px solid #3c3c3c; border-radius:4px; margin-bottom:1rem; align-items:center;">
+        <span id="megSelectedCount" style="margin-right:8px;">0 selected</span>
+        <select id="megBatchStatus" style="background:#1e1e1e; border:1px solid #3c3c3c; color:#d4d4d4; padding:4px; margin-right:8px;">
+          <option value="run">run</option>
+          <option value="check">check</option>
+          <option value="processed">processed</option>
+          <option value="skip">skip</option>
+          <option value="missing">missing</option>
+        </select>
+        <button id="megBatchApplyBtn" class="btn">Apply Status</button>
+      </div>
+
+      <div id="megTableContainer" style="overflow-x:auto; max-height:500px; overflow-y:auto; position:relative;">
+        <table id="megConversionTable" class="config-table" style="display:none; width:100%;">
+          <thead>
+            <tr>
+              <th class="checkbox-cell"><input type="checkbox" id="megSelectAll" title="Select all visible"></th>
+              <th data-column="status" style="cursor:pointer;" title="Click to sort">Status <span class="sort-indicator"></span></th>
+              <th data-column="participant_to" style="cursor:pointer;" title="Click to sort">Participant <span class="sort-indicator"></span></th>
+              <th data-column="session_to" style="cursor:pointer;" title="Click to sort">Session <span class="sort-indicator"></span></th>
+              <th data-column="task" style="cursor:pointer;" title="Click to sort">Task <span class="sort-indicator"></span></th>
+              <th data-column="run" style="cursor:pointer;" title="Click to sort">Run <span class="sort-indicator"></span></th>
+              <th data-column="datatype" style="cursor:pointer;" title="Click to sort">Datatype <span class="sort-indicator"></span></th>
+              <th>Raw File</th>
+            </tr>
+          </thead>
+          <tbody id="megTableBody"></tbody>
+        </table>
+        <div id="megTableEmpty" class="warn" style="display:none;">
+          No conversion table loaded. Click "Analyze / Refresh" to scan for files.
+        </div>
+      </div>
 
      <div class="form-section" style="margin-top:1rem;">
        <small class="hint">
@@ -282,9 +289,172 @@
          <div id="megReportSummary" style="background:#1e1e1e; border:1px solid #3c3c3c; border-radius:4px; padding:1rem; margin-bottom:1rem;"></div>
          <div id="megReportFindings" style="background:#0d0d0d; border:1px solid #3c3c3c; border-radius:4px; padding:1rem; max-height:400px; overflow-y:auto;"></div>
        </div>
-       <div id="megReportEmpty" class="warn">No report available. Run conversion first, then generate report.</div>
+        <div id="megReportEmpty" class="warn">No report available. Run conversion first, then generate report.</div>
+      </div>
+   </div>
+
+   <!-- Advanced Edit Modal -->
+   <div id="megEditModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.8); z-index:1000; overflow-y:auto;">
+     <div style="max-width:800px; margin:2rem auto; background:#1e1e1e; border:1px solid #3c3c3c; border-radius:4px; box-shadow:0 4px 20px rgba(0,0,0,0.5);">
+       <!-- Modal Header -->
+       <div style="display:flex; justify-content:space-between; align-items:center; padding:1rem; border-bottom:1px solid #3c3c3c; background:#252526;">
+         <h3 id="megModalHeader" style="margin:0; color:#d4d4d4;">Edit Row</h3>
+         <button id="megModalClose" style="background:transparent; border:none; color:#9e9e9e; font-size:1.5rem; cursor:pointer;" title="Close">&times;</button>
+       </div>
+
+       <!-- Modal Body -->
+       <div style="padding:1.5rem; max-height:70vh; overflow-y:auto;">
+         <!-- Live Filename Preview -->
+         <div style="background:#0d0d0d; border:1px solid #3c3c3c; border-radius:3px; padding:1rem; margin-bottom:1.5rem;">
+           <div style="font-size:0.8rem; color:#9e9e9e; margin-bottom:0.5rem;">BIDS Filename Preview:</div>
+           <code id="megFilenamePreview" style="font-size:0.9rem; color:#4ec9b0; word-break:break-all;">No filename generated yet</code>
+         </div>
+
+         <!-- Required Entities -->
+         <div style="margin-bottom:1.5rem;">
+           <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.75rem; color:#d4d4d4; font-weight:bold;">
+             Required BIDS Entities
+             <span class="help-icon" title="These fields are required for valid BIDS filenames">?</span>
+           </div>
+           <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+             <div class="modal-field">
+               <label>Subject <span class="help-icon" title="BIDS subject ID (e.g., '01'). No 'sub-' prefix needed.">?</span></label>
+               <input type="text" id="megEditSubject" data-bids-field="subject" placeholder="e.g., 01">
+             </div>
+             <div class="modal-field">
+               <label>Session <span class="help-icon" title="Session identifier (e.g., '01'). No 'ses-' prefix needed.">?</span></label>
+               <input type="text" id="megEditSession" data-bids-field="session" placeholder="e.g., 01">
+             </div>
+             <div class="modal-field" style="grid-column:1 / -1;">
+               <label>Task <span class="help-icon" title="Task name (e.g., 'rest', 'motor'). Will be lowercased.">?</span></label>
+               <input type="text" id="megEditTask" data-bids-field="task" placeholder="e.g., rest">
+             </div>
+           </div>
+         </div>
+
+         <!-- Optional Entities -->
+         <div style="margin-bottom:1.5rem;">
+           <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.75rem; color:#d4d4d4; font-weight:bold;">
+             Optional BIDS Entities
+             <span class="help-icon" title="These fields are optional but commonly used">?</span>
+           </div>
+           <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+             <div class="modal-field">
+               <label>Acquisition <span class="help-icon" title="Acquisition parameters label (e.g., 'highres')">?</span></label>
+               <input type="text" id="megEditAcquisition" data-bids-field="acquisition">
+             </div>
+             <div class="modal-field">
+               <label>Run <span class="help-icon" title="Run number. Auto-formatted as 2 digits (1 → '01')">?</span></label>
+               <input type="text" id="megEditRun" data-bids-field="run" placeholder="e.g., 1">
+             </div>
+             <div class="modal-field">
+               <label>Processing <span class="help-icon" title="Processing label (e.g., 'preproc', 'cleaned')">?</span></label>
+               <input type="text" id="megEditProcessing" data-bids-field="processing">
+             </div>
+             <div class="modal-field">
+               <label>Split <span class="help-icon" title="For split .fif files. Auto-formatted as 2 digits.">?</span></label>
+               <input type="text" id="megEditSplit" data-bids-field="split" placeholder="e.g., 1">
+             </div>
+           </div>
+         </div>
+
+         <!-- Advanced Entities (Collapsible) -->
+         <div style="margin-bottom:1.5rem;">
+           <div id="megAdvancedToggle" style="cursor:pointer; color:#0e639c; font-weight:bold; margin-bottom:0.75rem;">
+             ▶ Advanced Entities
+           </div>
+           <div id="megAdvancedContent" style="display:none;">
+             <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+               <div class="modal-field">
+                 <label>Recording <span class="help-icon" title="Recording name">?</span></label>
+                 <input type="text" id="megEditRecording" data-bids-field="recording">
+               </div>
+               <div class="modal-field">
+                 <label>Space <span class="help-icon" title="Coordinate space for anatomical/sensor files">?</span></label>
+                 <input type="text" id="megEditSpace" data-bids-field="space">
+               </div>
+               <div class="modal-field">
+                 <label>Description <span class="help-icon" title="Description for derivative data">?</span></label>
+                 <input type="text" id="megEditDescription" data-bids-field="description">
+               </div>
+               <div class="modal-field">
+                 <label>Tracking System <span class="help-icon" title="Tracking system entity">?</span></label>
+                 <input type="text" id="megEditTrackingSystem" data-bids-field="tracking_system">
+               </div>
+             </div>
+           </div>
+         </div>
+
+         <!-- File Properties -->
+         <div style="margin-bottom:1.5rem;">
+           <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.75rem; color:#d4d4d4; font-weight:bold;">
+             File Properties
+             <span class="help-icon" title="These define the file type and extension">?</span>
+           </div>
+           <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+             <div class="modal-field">
+               <label>Suffix <span class="help-icon" title="File suffix: meg, channels, events, etc.">?</span></label>
+               <select id="megEditSuffix" data-bids-field="suffix">
+                 <option value="">-- Select --</option>
+                 <option value="meg">meg</option>
+                 <option value="channels">channels</option>
+                 <option value="events">events</option>
+                 <option value="coordsystem">coordsystem</option>
+                 <option value="electrodes">electrodes</option>
+               </select>
+             </div>
+             <div class="modal-field">
+               <label>Extension <span class="help-icon" title="File extension: .fif, .json, .tsv, etc.">?</span></label>
+               <select id="megEditExtension" data-bids-field="extension">
+                 <option value="">-- Select --</option>
+                 <option value=".fif">.fif</option>
+                 <option value=".json">.json</option>
+                 <option value=".tsv">.tsv</option>
+                 <option value=".edf">.edf</option>
+                 <option value=".vhdr">.vhdr</option>
+               </select>
+             </div>
+             <div class="modal-field">
+               <label>Datatype <span class="help-icon" title="Data type: meg, eeg, anat, etc.">?</span></label>
+               <select id="megEditDatatype" data-bids-field="datatype">
+                 <option value="">-- Select --</option>
+                 <option value="meg">meg</option>
+                 <option value="eeg">eeg</option>
+                 <option value="ieeg">ieeg</option>
+                 <option value="anat">anat</option>
+               </select>
+             </div>
+           </div>
+         </div>
+
+         <!-- Source File Info -->
+         <div style="background:#252526; border:1px solid #3c3c3c; border-radius:3px; padding:1rem;">
+           <div style="font-size:0.8rem; color:#9e9e9e; margin-bottom:0.5rem;">Source File (Read-Only):</div>
+           <div id="megEditSource" style="font-size:0.85rem; color:#666; word-break:break-all; margin-bottom:1rem;"></div>
+           <div class="modal-field">
+             <label>Status <span class="help-icon" title="Conversion status: run, check, processed, skip, missing">?</span></label>
+             <select id="megEditStatus" data-bids-field="status">
+               <option value="run">run</option>
+               <option value="check">check</option>
+               <option value="processed">processed</option>
+               <option value="skip">skip</option>
+               <option value="missing">missing</option>
+             </select>
+           </div>
+         </div>
+       </div>
+
+       <!-- Modal Footer -->
+       <div style="display:flex; justify-content:space-between; align-items:center; padding:1rem; border-top:1px solid #3c3c3c; background:#252526;">
+         <button id="megModalCancel" class="btn">Cancel</button>
+         <div style="display:flex; gap:8px;">
+           <button id="megModalPrev" class="btn" title="Previous row">&lt; Prev</button>
+           <button id="megModalNext" class="btn" title="Next row">Next &gt;</button>
+           <button id="megModalSave" class="btn primary">Save Changes</button>
+         </div>
+       </div>
      </div>
-  </div>
+   </div>
 </div>
 
 <style>
@@ -602,6 +772,145 @@
   color: #cca700;
 }
 
+/* Filter Pills */
+#megFilterPills {
+  min-height: 28px;
+}
+
+.filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #0e639c;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+}
+
+.filter-pill-label {
+  opacity: 0.8;
+}
+
+.filter-pill-value {
+  font-weight: 500;
+}
+
+.filter-pill-remove {
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.7;
+}
+
+.filter-pill-remove:hover {
+  opacity: 1;
+}
+
+/* Table Sorting */
+#megConversionTable th {
+  cursor: pointer;
+  user-select: none;
+}
+
+#megConversionTable th.sort-asc .sort-indicator::after {
+  content: " ▲";
+  color: #0e639c;
+}
+
+#megConversionTable th.sort-desc .sort-indicator::after {
+  content: " ▼";
+  color: #0e639c;
+}
+
+/* Row States */
+#megTableBody tr:hover {
+  background: #2a2a2a !important;
+  cursor: pointer;
+}
+
+#megTableBody tr.row-modified td {
+  background: rgba(14, 99, 156, 0.1);
+}
+
+#megTableBody tr.row-selected td {
+  background: rgba(14, 99, 156, 0.2);
+}
+
+.checkbox-cell {
+  text-align: center;
+  width: 40px;
+}
+
+/* Modal Styles */
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.modal-field label {
+  font-size: 0.85rem;
+  color: #9e9e9e;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.modal-field input,
+.modal-field select {
+  background: #1e1e1e;
+  border: 1px solid #3c3c3c;
+  border-radius: 3px;
+  padding: 0.5rem;
+  color: #d4d4d4;
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+.modal-field input:focus,
+.modal-field select:focus {
+  outline: none;
+  border-color: #0e639c;
+}
+
+.help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: #3c3c3c;
+  color: #9e9e9e;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  cursor: help;
+}
+
+.help-icon:hover {
+  background: #0e639c;
+  color: #fff;
+}
+
+#megEditModal .btn-small {
+  background: #3c3c3c;
+  border: none;
+  color: #d4d4d4;
+  padding: 4px 12px;
+  font-family: monospace;
+  font-size: 0.8rem;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+#megEditModal .btn-small:hover {
+  background: #4a4a4a;
+}
+
 /* Navigation */
 .view-tabs {
   display: flex;
@@ -695,662 +1004,4 @@
 }
 </style>
 
-<script>
-(function() {
-  // Get auth token from URL query params or main page (required for all server fetches)
-  function _getToken() {
-    const params = new URLSearchParams(window.location.search);
-    return params.get('token') || (window.authToken || '');
-  }
-  function _p(path) {
-    const token = _getToken();
-    return path + (token ? (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token) : '');
-  }
-
-  // MEG BIDS Tab Module
-  window.megBids = {
-    currentStep: 1,
-    projectRoot: '',
-    config: {
-      project_name: 'MEG Dataset',
-      raw_dir: 'raw/natmeg',
-      bids_dir: 'BIDS',
-      tasks: [],
-      conversion_file: 'logs/bids_conversion.tsv',
-      config_file: 'meg_config.json',
-      overwrite: false
-    },
-    tasks: [],
-    tableData: [],
-    tableFile: null,
-    validationTimeouts: {},
-    autoSaveTimeout: null,
-    jsonMode: 'view',
-
-    // Initialize
-    init: async function() {
-      const rootData = await this.loadProjectRoot();
-      this.loadFromLocalStorage();
-      this.renderTasks();
-      this.updateJsonDisplay();
-      this.validateAllPaths();
-    },
-
-    // Load project root from server
-    loadProjectRoot: async function() {
-      try {
-        const res = await fetch(_p('/meg-get-project-root'));
-        const data = await res.json();
-        this.projectRoot = data.project_root || '/data/projects/unknown';
-
-        // Update root displays
-        document.getElementById('megProjectRootDisplay').textContent = this.projectRoot;
-        const rootPrefix = this.projectRoot + '/';
-        document.getElementById('megRootPrefixRaw').textContent = rootPrefix;
-        document.getElementById('megRootPrefixBids').textContent = rootPrefix;
-        document.getElementById('megRootPrefixConv').textContent = rootPrefix;
-        document.getElementById('megRootPrefixConfig').textContent = rootPrefix;
-
-        // Set project name (from server, not user-editable)
-        if (data.project_name) {
-          this.config.project_name = data.project_name;
-          document.getElementById('megProjectNameDisplay').textContent = data.project_name;
-        }
-
-        return data;
-      } catch (e) {
-        console.error('Failed to load project root:', e);
-        return null;
-      }
-    },
-
-    // Step navigation
-    switchStep: function(step) {
-      this.currentStep = step;
-
-      document.querySelectorAll('#meg-bids-container .nav-item').forEach(el => {
-        el.classList.toggle('active', parseInt(el.dataset.step) === step);
-      });
-
-      document.querySelectorAll('.meg-step').forEach(el => {
-        el.classList.toggle('active', el.id === 'meg-step-' + step);
-      });
-    },
-
-    // Sync form to JSON (live)
-    syncFormToJson: function() {
-      this.config.raw_dir = document.getElementById('megCfgRawDir').value || 'raw/natmeg';
-      this.config.bids_dir = document.getElementById('megCfgBidsDir').value || 'BIDS';
-      this.config.conversion_file = document.getElementById('megCfgConversionFile').value || 'logs/bids_conversion.tsv';
-      this.config.config_file = document.getElementById('megCfgConfigFile').value || 'meg_config.json';
-      this.config.overwrite = document.getElementById('megCfgOverwrite').checked;
-      this.config.tasks = this.tasks;
-
-      this.updateJsonDisplay();
-      this.debouncedValidatePaths();
-      this.debouncedAutoSave();
-      this.setAutoSaveStatus('unsaved');
-    },
-
-    // Sync JSON to form (on edit blur)
-    syncJsonToForm: function() {
-      try {
-        const jsonText = document.getElementById('megJsonEdit').value;
-        const parsed = JSON.parse(jsonText);
-
-        // Update config (project_name is server-defined, preserve it)
-        const savedProjectName = this.config.project_name;
-        this.config = parsed;
-        this.config.project_name = savedProjectName;
-        this.tasks = parsed.tasks || [];
-
-        // Update form fields
-        document.getElementById('megCfgRawDir').value = parsed.raw_dir || '';
-        document.getElementById('megCfgBidsDir').value = parsed.bids_dir || '';
-        document.getElementById('megCfgConversionFile').value = parsed.conversion_file || '';
-        document.getElementById('megCfgConfigFile').value = parsed.config_file || 'meg_config.json';
-        document.getElementById('megCfgOverwrite').checked = parsed.overwrite || false;
-
-        this.renderTasks();
-        this.updateJsonDisplay();
-        this.validateAllPaths();
-        this.debouncedAutoSave();
-        this.showJsonValidation('Valid JSON', 'success');
-      } catch (e) {
-        this.showJsonValidation('Invalid JSON: ' + e.message, 'error');
-      }
-    },
-
-    // Update JSON display
-    updateJsonDisplay: function() {
-      const jsonText = JSON.stringify(this.config, null, 2);
-      document.getElementById('megJsonView').textContent = jsonText;
-      document.getElementById('megJsonEdit').value = jsonText;
-    },
-
-    // JSON mode toggle
-    setJsonMode: function(mode) {
-      this.jsonMode = mode;
-
-      document.getElementById('megJsonViewBtn').classList.toggle('active', mode === 'view');
-      document.getElementById('megJsonEditBtn').classList.toggle('active', mode === 'edit');
-
-      document.getElementById('megJsonView').style.display = mode === 'view' ? 'block' : 'none';
-      document.getElementById('megJsonEdit').style.display = mode === 'edit' ? 'block' : 'none';
-
-      if (mode === 'edit') {
-        document.getElementById('megJsonEdit').focus();
-      }
-    },
-
-    // Tasks management
-    handleTasksKeydown: function(event) {
-      const input = document.getElementById('megCfgTasksInput');
-
-      if (event.key === 'Enter' || event.key === ',') {
-        event.preventDefault();
-        const value = input.value.trim();
-        if (value && !this.tasks.includes(value)) {
-          this.tasks.push(value);
-          input.value = '';
-          this.renderTasks();
-          this.syncFormToJson();
-        }
-      } else if (event.key === 'Backspace' && !input.value && this.tasks.length > 0) {
-        this.tasks.pop();
-        this.renderTasks();
-        this.syncFormToJson();
-      }
-    },
-
-    removeTask: function(index) {
-      this.tasks.splice(index, 1);
-      this.renderTasks();
-      this.syncFormToJson();
-    },
-
-    renderTasks: function() {
-      const container = document.getElementById('megTasksList');
-      container.innerHTML = this.tasks.map((task, idx) => `
-        <span class="tag">
-          ${task}
-          <span class="tag-remove" onclick="megBids.removeTask(${idx})">&times;</span>
-        </span>
-      `).join('');
-    },
-
-    // Path validation
-    debouncedValidatePaths: function() {
-      clearTimeout(this.validationTimeouts.all);
-      this.validationTimeouts.all = setTimeout(() => this.validateAllPaths(), 300);
-    },
-
-    validateAllPaths: async function() {
-      const paths = [
-        { id: 'raw', path: this.config.raw_dir },
-        { id: 'bids', path: this.config.bids_dir },
-        { id: 'conv', path: this.config.conversion_file }
-      ];
-
-      // Mark all as checking
-      paths.forEach(p => {
-        document.getElementById('val-' + p.id).className = 'path-validation checking';
-      });
-
-      try {
-        const res = await fetch(_p('/meg-validate-paths'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ paths: paths })
-        });
-        const data = await res.json();
-
-        Object.entries(data.results || {}).forEach(([id, result]) => {
-          const el = document.getElementById('val-' + id);
-          if (el) {
-            el.className = 'path-validation ' + (result.exists ? 'valid' : 'invalid');
-            el.title = result.resolved || '';
-          }
-        });
-      } catch (e) {
-        console.error('Validation failed:', e);
-      }
-    },
-
-    // Auto-save
-    debouncedAutoSave: function() {
-      clearTimeout(this.autoSaveTimeout);
-      this.autoSaveTimeout = setTimeout(() => this.saveToLocalStorage(), 2000);
-    },
-
-    saveToLocalStorage: function() {
-      const key = 'meg-bids-config-' + (this.projectRoot || 'default');
-      localStorage.setItem(key, JSON.stringify(this.config));
-      this.setAutoSaveStatus('saved');
-    },
-
-    loadFromLocalStorage: function() {
-      const key = 'meg-bids-config-' + (this.projectRoot || 'default');
-      const saved = localStorage.getItem(key);
-      if (saved) {
-        try {
-          const savedConfig = JSON.parse(saved);
-          const savedProjectName = this.config.project_name;
-          this.config = savedConfig;
-          this.config.project_name = savedProjectName;
-          this.tasks = this.config.tasks || [];
-
-          // Update form
-          document.getElementById('megCfgRawDir').value = this.config.raw_dir || '';
-          document.getElementById('megCfgBidsDir').value = this.config.bids_dir || '';
-          document.getElementById('megCfgConversionFile').value = this.config.conversion_file || '';
-          document.getElementById('megCfgConfigFile').value = this.config.config_file || 'meg_config.json';
-          document.getElementById('megCfgOverwrite').checked = this.config.overwrite || false;
-
-          this.renderTasks();
-          this.updateJsonDisplay();
-          this.setAutoSaveStatus('saved');
-        } catch (e) {
-          console.error('Failed to load from localStorage:', e);
-        }
-      }
-    },
-
-    setAutoSaveStatus: function(status) {
-      const el = document.getElementById('megAutoSaveStatus');
-      if (status === 'saved') {
-        el.textContent = 'Auto-saved ✓';
-        el.classList.remove('unsaved');
-      } else {
-        el.textContent = 'Unsaved changes';
-        el.classList.add('unsaved');
-      }
-    },
-
-    showJsonValidation: function(message, type) {
-      const el = document.getElementById('megJsonValidation');
-      el.textContent = message;
-      el.className = 'validation-status ' + type;
-      setTimeout(() => {
-        el.textContent = '';
-      }, 3000);
-    },
-
-    // Actions
-    resetDefaults: function() {
-      if (!confirm('Reset all configuration to defaults?')) return;
-
-      const savedProjectName = this.config.project_name;
-      this.config = {
-        project_name: savedProjectName,
-        raw_dir: 'raw/natmeg',
-        bids_dir: 'BIDS',
-        tasks: [],
-        conversion_file: 'logs/bids_conversion.tsv',
-        config_file: 'meg_config.json',
-        overwrite: false
-      };
-      this.tasks = [];
-
-      document.getElementById('megCfgRawDir').value = 'raw/natmeg';
-      document.getElementById('megCfgBidsDir').value = 'BIDS';
-      document.getElementById('megCfgConversionFile').value = 'logs/bids_conversion.tsv';
-      document.getElementById('megCfgConfigFile').value = 'meg_config.json';
-      document.getElementById('megCfgOverwrite').checked = false;
-
-      this.renderTasks();
-      this.updateJsonDisplay();
-      this.validateAllPaths();
-      this.saveToLocalStorage();
-    },
-
-    loadConfigFromFile: async function() {
-      const path = prompt('Enter config file path:', 'meg_config.json');
-      if (!path) return;
-
-      try {
-        const res = await fetch(_p('/meg-load-config?path=' + encodeURIComponent(path)));
-        const data = await res.json();
-
-        if (data.error) {
-          alert('Error: ' + data.error);
-          return;
-        }
-
-        // Convert from server config format to minimal format
-        const serverConfig = data.config;
-        const savedProjectName = this.config.project_name;
-        this.config = {
-          project_name: savedProjectName,
-          raw_dir: serverConfig.Raw || 'raw/natmeg',
-          bids_dir: serverConfig.BIDS || 'BIDS',
-          tasks: serverConfig.Tasks || [],
-          conversion_file: serverConfig.Conversion_file || 'logs/bids_conversion.tsv',
-          config_file: serverConfig.config_file || 'meg_config.json',
-          overwrite: serverConfig.overwrite || false
-        };
-        this.tasks = this.config.tasks;
-
-        // Update form
-        document.getElementById('megCfgRawDir').value = this.config.raw_dir;
-        document.getElementById('megCfgBidsDir').value = this.config.bids_dir;
-        document.getElementById('megCfgConversionFile').value = this.config.conversion_file;
-        document.getElementById('megCfgConfigFile').value = this.config.config_file;
-        document.getElementById('megCfgOverwrite').checked = this.config.overwrite;
-
-        this.renderTasks();
-        this.updateJsonDisplay();
-        this.validateAllPaths();
-        this.saveToLocalStorage();
-        alert('Config loaded from: ' + path);
-      } catch (e) {
-        alert('Failed to load config: ' + e.message);
-      }
-    },
-
-    saveConfigToFile: async function() {
-      // Convert to server format
-      const serverConfig = {
-        project_name: this.config.project_name,
-        raw_dir: this.config.raw_dir,
-        bids_dir: this.config.bids_dir,
-        tasks: this.config.tasks,
-        conversion_file: this.config.conversion_file,
-        config_file: this.config.config_file,
-        overwrite: this.config.overwrite
-      };
-
-      // Use the configured config file name
-      const configFileName = this.config.config_file || 'meg_config.json';
-      
-      // For now, just show the JSON and let user save manually
-      // In a real implementation, you'd send this to a server endpoint
-      const blob = new Blob([JSON.stringify(serverConfig, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = configFileName.split('/').pop(); // Get filename only
-      a.click();
-      URL.revokeObjectURL(url);
-
-      this.setAutoSaveStatus('saved');
-    },
-
-    // Step 2: Conversion Table
-    runAnalysis: async function() {
-      document.getElementById('megAnalyzeBtn').disabled = true;
-      this.setStatus('megTableStatus', 'Analyzing raw data...');
-
-      try {
-        // Build config for server
-        const serverConfig = {
-          project_name: this.config.project_name,
-          raw_dir: this.config.raw_dir,
-          bids_dir: this.config.bids_dir,
-          tasks: this.config.tasks,
-          conversion_file: this.config.conversion_file,
-          overwrite: this.config.overwrite
-        };
-
-        const res = await fetch(_p('/meg-run-analysis'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            config: serverConfig,
-            force_scan: true
-          })
-        });
-        const data = await res.json();
-
-        if (data.error) {
-          this.setStatus('megTableStatus', 'Error: ' + data.error, 'warn');
-          return;
-        }
-
-        this.tableData = data.table || [];
-        this.tableFile = data.file;
-        this.renderTable();
-
-        document.getElementById('megSaveTableBtn').disabled = false;
-        this.setStatus('megTableStatus', `Found ${data.row_count} files. Table saved to: ${data.file}`);
-      } catch (e) {
-        this.setStatus('megTableStatus', 'Failed: ' + e.message, 'warn');
-      } finally {
-        document.getElementById('megAnalyzeBtn').disabled = false;
-      }
-    },
-
-    renderTable: function() {
-      const tbody = document.getElementById('megTableBody');
-      const table = document.getElementById('megConversionTable');
-      const empty = document.getElementById('megTableEmpty');
-
-      if (!this.tableData || this.tableData.length === 0) {
-        table.style.display = 'none';
-        empty.style.display = 'block';
-        return;
-      }
-
-      table.style.display = 'table';
-      empty.style.display = 'none';
-
-      tbody.innerHTML = this.tableData.map((row, idx) => `
-        <tr data-idx="${idx}">
-          <td><select onchange="megBids.updateCell(${idx}, 'status', this.value)">
-            <option value="run" ${row.status === 'run' ? 'selected' : ''}>run</option>
-            <option value="check" ${row.status === 'check' ? 'selected' : ''}>check</option>
-            <option value="processed" ${row.status === 'processed' ? 'selected' : ''}>processed</option>
-            <option value="skip" ${row.status === 'skip' ? 'selected' : ''}>skip</option>
-            <option value="missing" ${row.status === 'missing' ? 'selected' : ''}>missing</option>
-          </select></td>
-          <td>${row.participant_from || ''}</td>
-          <td>${row.session_from || ''}</td>
-          <td><input type="text" value="${row.task || ''}" onchange="megBids.updateCell(${idx}, 'task', this.value)" style="width:100px;"></td>
-          <td>${row.run || ''}</td>
-          <td>${row.datatype || ''}</td>
-          <td title="${row.raw_path || ''}/${row.raw_name || ''}">${row.raw_name || ''}</td>
-        </tr>
-      `).join('');
-    },
-
-    updateCell: function(idx, field, value) {
-      if (this.tableData[idx]) {
-        this.tableData[idx][field] = value;
-      }
-    },
-
-    saveTable: async function() {
-      if (!this.tableFile) return;
-
-      document.getElementById('megSaveTableBtn').disabled = true;
-
-      try {
-        const res = await fetch(_p('/meg-save-conversion-table'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            table: this.tableData,
-            file: this.tableFile
-          })
-        });
-        const data = await res.json();
-
-        if (data.error) {
-          this.setStatus('megTableStatus', 'Error: ' + data.error, 'warn');
-        } else {
-          this.setStatus('megTableStatus', `Table saved: ${data.rows} rows`);
-        }
-      } catch (e) {
-        this.setStatus('megTableStatus', 'Failed to save: ' + e.message, 'warn');
-      } finally {
-        document.getElementById('megSaveTableBtn').disabled = false;
-      }
-    },
-
-    // Step 3: Make BIDS
-    runBidsify: async function() {
-      const verbose = document.getElementById('megVerboseCheck').checked;
-
-      document.getElementById('megRunBidsifyBtn').disabled = true;
-      document.getElementById('megProgressSection').style.display = 'block';
-      this.setStatus('megConversionStatus', 'Running BIDS conversion...');
-
-      const output = document.getElementById('megOutput');
-      output.textContent = 'Starting conversion...\n';
-
-      try {
-        const serverConfig = {
-          project_name: this.config.project_name,
-          raw_dir: this.config.raw_dir,
-          bids_dir: this.config.bids_dir,
-          tasks: this.config.tasks,
-          conversion_file: this.config.conversion_file,
-          overwrite: this.config.overwrite
-        };
-
-        const res = await fetch(_p('/meg-run-bidsify'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            config: serverConfig,
-            verbose: verbose
-          })
-        });
-        const data = await res.json();
-
-        if (data.error) {
-          output.textContent += '\nError: ' + data.error;
-          this.setStatus('megConversionStatus', 'Conversion failed', 'warn');
-        } else {
-          output.textContent += '\n' + (data.message || 'Conversion completed!');
-          this.setStatus('megConversionStatus', 'Conversion completed successfully');
-        }
-      } catch (e) {
-        output.textContent += '\nFailed: ' + e.message;
-        this.setStatus('megConversionStatus', 'Conversion failed: ' + e.message, 'warn');
-      } finally {
-        document.getElementById('megRunBidsifyBtn').disabled = false;
-      }
-    },
-
-    // Step 4: Results
-    generateReport: async function() {
-      document.getElementById('megGenerateReportBtn').disabled = true;
-      document.getElementById('megReportLoading').style.display = 'block';
-      document.getElementById('megReportEmpty').style.display = 'none';
-
-      try {
-        const serverConfig = {
-          project_name: this.config.project_name,
-          raw_dir: this.config.raw_dir,
-          bids_dir: this.config.bids_dir,
-          tasks: this.config.tasks,
-          conversion_file: this.config.conversion_file,
-          overwrite: this.config.overwrite
-        };
-
-        const res = await fetch(_p('/meg-run-report'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ config: serverConfig })
-        });
-        const data = await res.json();
-
-        if (data.error) {
-          document.getElementById('megReportEmpty').textContent = 'Error: ' + data.error;
-          document.getElementById('megReportEmpty').style.display = 'block';
-        } else {
-          this.loadReport();
-        }
-      } catch (e) {
-        document.getElementById('megReportEmpty').textContent = 'Failed: ' + e.message;
-        document.getElementById('megReportEmpty').style.display = 'block';
-      } finally {
-        document.getElementById('megGenerateReportBtn').disabled = false;
-        document.getElementById('megReportLoading').style.display = 'none';
-      }
-    },
-
-    loadReport: async function() {
-      try {
-        const serverConfig = {
-          project_name: this.config.project_name,
-          raw_dir: this.config.raw_dir,
-          bids_dir: this.config.bids_dir,
-          tasks: this.config.tasks,
-          conversion_file: this.config.conversion_file,
-          overwrite: this.config.overwrite
-        };
-
-        const res = await fetch(_p('/meg-get-report'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ config: serverConfig })
-        });
-        const data = await res.json();
-
-        if (data.error) {
-          document.getElementById('megReportEmpty').textContent = data.error;
-          document.getElementById('megReportEmpty').style.display = 'block';
-          document.getElementById('megReportContent').style.display = 'none';
-          return;
-        }
-
-        const report = data.report || {};
-        const summary = report['BIDS Summary'] || {};
-
-        document.getElementById('megReportSummary').innerHTML = `
-          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem;">
-            <div>Total Files: <strong>${summary['Total Files'] || 0}</strong></div>
-            <div>Valid BIDS: <strong style="color:#4ec9b0;">${summary['Valid BIDS Files'] || 0}</strong></div>
-            <div>Invalid BIDS: <strong style="color:#f48771;">${summary['Invalid BIDS Files'] || 0}</strong></div>
-            <div>Compliance: <strong>${summary['Compliance Rate (%)'] || 0}%</strong></div>
-          </div>
-        `;
-
-        const findings = report['QA Analysis']?.findings || [];
-        if (findings.length > 0) {
-          document.getElementById('megReportFindings').innerHTML = findings.map(f => `
-            <div style="padding:0.5rem; border-bottom:1px solid #3c3c3c;">
-              <div style="color:${f.severity === 'error' ? '#f48771' : f.severity === 'warning' ? '#cca700' : '#9e9e9e'};">
-                [${f.severity?.toUpperCase() || 'INFO'}] ${f.issue || 'Unknown issue'}
-              </div>
-              <div style="font-size:0.8rem; color:#9e9e9e; margin-top:0.25rem;">
-                ${f.suggestion || ''}
-              </div>
-            </div>
-          `).join('');
-        } else {
-          document.getElementById('megReportFindings').innerHTML = '<div style="color:#4ec9b0;">✓ No issues found</div>';
-        }
-
-        document.getElementById('megReportEmpty').style.display = 'none';
-        document.getElementById('megReportContent').style.display = 'block';
-      } catch (e) {
-        document.getElementById('megReportEmpty').textContent = 'Failed to load report: ' + e.message;
-        document.getElementById('megReportEmpty').style.display = 'block';
-      }
-    },
-
-    setStatus: function(elementId, message, type) {
-      const el = document.getElementById(elementId);
-      el.textContent = message;
-      el.className = type === 'warn' ? 'warn' : 'muted';
-    }
-  };
-
-   // Initialize on load
-   if (document.readyState === 'loading') {
-     document.addEventListener('DOMContentLoaded', function() {
-       megBids.init();
-       megBids.switchStep(1);
-     });
-   } else {
-     megBids.init();
-     megBids.switchStep(1);
-   }
-})();
-</script>
-<script src="/meg-tab-editor.js"></script>
-<script src="/meg-tab-execute.js"></script>
-<script src="/meg-tab-report.js"></script>
+<script src="/meg-tab.js"></script>

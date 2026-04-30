@@ -477,16 +477,28 @@
       };
 
       const configFileName = this.config.config_file || 'meg_config.json';
-      
-      const blob = new Blob([JSON.stringify(serverConfig, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = configFileName.split('/').pop();
-      a.click();
-      URL.revokeObjectURL(url);
 
-      this.setAutoSaveStatus('saved');
+      try {
+        const res = await fetch(Utils.apiPath('/meg-save-config'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            config: serverConfig,
+            config_file: configFileName
+          })
+        });
+
+        const data = await res.json();
+
+        if (data.error) {
+          alert('Error saving config: ' + data.error);
+        } else {
+          this.setAutoSaveStatus('saved');
+          alert('Config saved to: ' + data.full_path);
+        }
+      } catch (e) {
+        alert('Failed to save config: ' + e.message);
+      }
     },
 
     // Editor module

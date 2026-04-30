@@ -392,6 +392,37 @@ def _handle_get_static_js(h, params):
         h.send_error(500, f"Failed to read JavaScript file: {e}")
 
 
+def _handle_save_config(h, body):
+    """Save configuration file to project path."""
+    config_data = body.get("config", {})
+    config_file = body.get("config_file", "meg_config.json")
+
+    if not config_file:
+        h.send_error(400, "Missing config file path")
+        return
+
+    full_path = _resolve_project_path(config_file)
+    if not full_path:
+        h.send_error(403, "Path outside project root")
+        return
+
+    # Ensure parent directory exists
+    parent_dir = os.path.dirname(full_path)
+    if parent_dir and not os.path.exists(parent_dir):
+        try:
+            os.makedirs(parent_dir, exist_ok=True)
+        except Exception as e:
+            h.send_error(500, f"Failed to create directory: {e}")
+            return
+
+    try:
+        with open(full_path, 'w', encoding='utf-8') as f:
+            json.dump(config_data, f, indent=2)
+        h._send_json({"ok": True, "path": config_file, "full_path": full_path})
+    except Exception as e:
+        h.send_error(500, f"Failed to save config: {e}")
+
+
 # ── Registration ───────────────────────────────────────────────────────────────
 
 def register(get_routes, post_routes):
@@ -403,6 +434,7 @@ def register(get_routes, post_routes):
     get_routes["/meg-tab.js"] = _handle_get_static_js
 
     post_routes["/meg-save-conversion-table"] = _handle_save_conversion_table
+    post_routes["/meg-save-config"] = _handle_save_config
     post_routes["/meg-run-analysis"] = _handle_run_analysis
     post_routes["/meg-run-bidsify"] = _handle_run_bidsify
     post_routes["/meg-run-report"] = _handle_run_report

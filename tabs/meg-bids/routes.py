@@ -374,6 +374,24 @@ def _handle_get_report(h, body):
         h._send_json({"error": f"Failed to read report: {e}"})
 
 
+def _handle_get_static_js(h, params):
+    """Serve the meg-tab.js static file."""
+    js_path = os.path.join(_TAB_DIR, "meg-tab.js")
+    if not os.path.isfile(js_path):
+        h.send_error(404, "JavaScript file not found")
+        return
+    try:
+        with open(js_path, encoding="utf-8") as fh:
+            body = fh.read().encode("utf-8")
+        h.send_response(200)
+        h.send_header("Content-Type", "application/javascript; charset=utf-8")
+        h.send_header("Content-Length", str(len(body)))
+        h.end_headers()
+        h.wfile.write(body)
+    except Exception as e:
+        h.send_error(500, f"Failed to read JavaScript file: {e}")
+
+
 # ── Registration ───────────────────────────────────────────────────────────────
 
 def register(get_routes, post_routes):
@@ -382,6 +400,7 @@ def register(get_routes, post_routes):
     get_routes["/meg-get-project-root"] = _handle_get_project_root
     get_routes["/meg-load-config"] = _handle_load_config
     get_routes["/meg-get-conversion-table"] = _handle_get_conversion_table
+    get_routes["/meg-tab.js"] = _handle_get_static_js
 
     post_routes["/meg-save-conversion-table"] = _handle_save_conversion_table
     post_routes["/meg-run-analysis"] = _handle_run_analysis

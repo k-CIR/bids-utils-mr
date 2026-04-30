@@ -244,23 +244,7 @@ def _run_single(job_id, sess, dicom_root, output_dir, config_file, clobber):
         "recoded_participant": sess.get("participant", ""),
         "recoded_session": sess.get("session", ""),
     })
-    matches = []
-    for row in plan["descriptions"]:
-        criteria = row.get("criteria") or {}
-        if pet_config_adapter.matches_criteria(criteria, {
-            "series_description": sess.get("series_description"),
-            "series_number": sess.get("series_number"),
-            "protocol_name": sess.get("protocol_name"),
-            "modality": sess.get("modality"),
-            "image_type": sess.get("image_type"),
-            "radiopharmaceutical": sess.get("radiopharmaceutical"),
-        }):
-            matches.append(row)
-
-    if not matches and plan["descriptions"]:
-        matches = plan["descriptions"]
-
-    plan["matched_descriptions"] = matches
+    plan["matched_descriptions"] = plan.get("descriptions", []) or []
     plan["launch"] = {
         "dicom_root": dicom_root,
         "output_dir": output_dir,

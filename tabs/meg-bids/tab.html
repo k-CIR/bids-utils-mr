@@ -132,8 +132,8 @@
 
      <div class="form-section">
        <div style="display:flex; gap:8px; margin-bottom:1rem;">
-         <button id="megAnalyzeBtn" class="btn" onclick="megBids.runAnalysis()">Analyze / Refresh</button>
-         <button id="megSaveTableBtn" class="btn primary" onclick="megBids.saveTable()" disabled>Save Table</button>
+         <button id="megAnalyzeBtn" class="btn" onclick="megBids.Editor.runAnalysis()">Analyze / Refresh</button>
+         <button id="megSaveTableBtn" class="btn primary" onclick="megBids.Editor.saveTable()" disabled>Save Table</button>
        </div>
        <div id="megTableStatus" class="muted"></div>
      </div>
@@ -221,7 +221,7 @@
 
      <div class="form-section">
        <div style="display:flex; gap:8px; margin-bottom:1rem; align-items:center;">
-         <button id="megRunBidsifyBtn" class="btn primary" onclick="megBids.runBidsify()">Run BIDS Conversion</button>
+         <button id="megRunBidsifyBtn" class="btn primary" onclick="megBids.Editor.runBidsify()">Run BIDS Conversion</button>
          <label style="display:flex; align-items:center; gap:4px; font-size:0.85rem;">
            <input type="checkbox" id="megVerboseCheck"> Verbose output
          </label>
@@ -259,8 +259,8 @@
     </p>
 
     <div class="form-section">
-      <button id="megGenerateReportBtn" class="btn" onclick="megBids.generateReport()">Generate Report</button>
-      <button id="megRefreshReportBtn" class="btn" onclick="megBids.loadReport()" style="margin-left:8px;">Refresh</button>
+      <button id="megGenerateReportBtn" class="btn" onclick="megBids.Editor.generateReport()">Generate Report</button>
+      <button id="megRefreshReportBtn" class="btn" onclick="megBids.Editor.loadReport()" style="margin-left:8px;">Refresh</button>
     </div>
 
      <div id="megReportSection" style="margin-top:1rem;">

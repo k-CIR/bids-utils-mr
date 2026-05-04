@@ -40,6 +40,16 @@ def read_helper_jsons():
         if re.match(r"^Scout", series_desc, re.IGNORECASE):
             continue
 
+        # Exclude dose information series.
+        if re.search(r"\bdose\b", series_desc, re.IGNORECASE):
+            continue
+
+        # Exclude series with ImageType containing DERIVED or SECONDARY,
+        # which typically indicate processed/summary images rather than raw acquisitions.
+        image_type_list = data.get("ImageType") or []
+        if any(t in ("DERIVED", "SECONDARY") for t in image_type_list):
+            continue
+
         series_num = data.get("SeriesNumber")
         protocol_name = data.get("ProtocolName", "")
         modality = data.get("Modality", "")

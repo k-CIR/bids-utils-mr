@@ -104,6 +104,8 @@ def _entity_token(entity):
     text = _normalize_text(entity)
     if not text:
         return ""
+    if text.casefold().startswith("desc-"):
+        return ""
     return text
 
 
@@ -113,11 +115,6 @@ def render_entities(description):
         token = _entity_token(entity)
         if token:
             tokens.append(token)
-
-    for key in ("desc",):
-        value = _normalize_text(description.get(key))
-        if value:
-            tokens.append(f"{key}-{value}")
 
     return tokens
 
@@ -154,7 +151,14 @@ def build_conversion_plan(config, session, recode=None):
                 "datatype": _normalize_text(desc.get("datatype")),
                 "suffix": _normalize_text(desc.get("suffix")),
                 "criteria": dict(desc.get("criteria") or {}),
-                "custom_entities": _normalize_list(desc.get("custom_entities")),
+                "custom_entities": [
+                    token
+                    for token in (
+                        _entity_token(entity)
+                        for entity in _normalize_list(desc.get("custom_entities"))
+                    )
+                    if token
+                ],
                 "sidecar_changes": dict(desc.get("sidecar_changes") or {}),
                 "entities": render_entities(desc),
             }

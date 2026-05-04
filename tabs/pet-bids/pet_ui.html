@@ -835,10 +835,6 @@
         document.getElementById('csv-columns').value = selectedColumns;
       }
 
-      // Always include tracking columns alongside selected columns.
-      const selected = splitColumns(selectedColumns);
-      const requestedColumns = Array.from(new Set(selected.concat(trackingColumns)));
-
       btn.disabled = true;
       btn.innerHTML = '<span class="spinner"></span> Loading\u2026';
       setCsvFeedback('Loading CSV...');
@@ -846,49 +842,38 @@
       table.innerHTML = '';
 
       try {
-        let url = '/get-csv?path=' + encodeURIComponent(relPath);
-        if (requestedColumns.length) {
-          url += '&columns=' + encodeURIComponent(requestedColumns.join(', '));
-        }
-
-        const res = await fetch(url);
+        const res = await fetch('/get-csv?path=' + encodeURIComponent(relPath));
         if (!res.ok) {
           const msg = await res.text();
           throw new Error(msg || ('HTTP ' + res.status));
         }
         const data = await res.json();
-        const writableColumns = (data.headers || []).slice();
-        const normalized = ensureTrackingColumns(data.headers || [], data.rows || []);
+        const fileRows = (data.rows || []).map(r => (r || []).slice());
 
-        currentCsv = {
-          path: data.path || relPath,
-          headers: normalized.headers,
-          rows: normalized.rows,
-          writableColumns: [],
-          mode: 'source',
-        };
-        const defaultedCount = applyDefaultWorkflowValues();
-        const autoCounts = applyAutoDetectedStatuses(data.auto_detected || []);
+        // This source CSV is treated as positional input: the first two raw
+        // columns become `subject` and `session`, and the rest is not shown or
+        // persisted into the target.
+        const filteredHeaders = ['subject', 'session'];
+        const filteredRows = fileRows.map(r => [
+          r.length > 0 ? r[0] : '',
+          r.length > 1 ? r[1] : '',
+        ]);
+
+          currentCsv = {
+            path: data.path || relPath,
+            headers: filteredHeaders,
+            rows: filteredRows,
+            writableColumns: [],
+            mode: 'source',
+          };
         renderCsvTable(currentCsv.headers, currentCsv.rows);
         wrap.style.display = 'block';
-        const addedText = normalized.added.length
-          ? ' | Added tracking columns: ' + normalized.added.join(', ')
-          : '';
-        const autoText = (autoCounts.bids || autoCounts.petprep)
-          ? ' | Auto-detected done: BIDS ' + autoCounts.bids + ', PETPrep ' + autoCounts.petprep
-          : '';
-        const defaultText = defaultedCount
-          ? ' | Defaulted BIDS to To do: ' + defaultedCount
-          : '';
         const truncText = data.truncated ? ' (showing first 1000 rows)' : '';
         setCsvFeedback(
           'Loaded: ' + (data.path || relPath) +
           ' | Rows: ' + String(data.row_count || 0) +
           truncText +
-          addedText +
-          defaultText +
-          autoText +
-          ' | Source mode (read-only; save to target to persist)',
+            ' | Source mode (read-only; initialize target to add tracking columns)',
           'ok'
         );
         return true;
@@ -915,6 +900,9 @@
 
       const ok = await loadCsvFile();
       if (!ok) return;
+      const normalized = ensureTrackingColumns(currentCsv.headers, currentCsv.rows);
+      currentCsv.headers = normalized.headers;
+      currentCsv.rows = normalized.rows;
       await saveTargetFile();
       await loadTargetFile();
     }

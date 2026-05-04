@@ -164,8 +164,29 @@ def _run_pool(job_id, sessions, dicom_root, output_dir, config_file, max_workers
         _active_jobs[job_id]["status"] = "done"
 
 
+def _remove_session_bids_files(sess, output_dir):
+    """Pre-delete existing BIDS output files for *sess* to work around
+    dcm2bids bug where --clobber logs the overwrite but never renames .nii.gz.
+    Deletes files only; directory structure is preserved.
+    """
+    parts = ["sub-" + sess["participant"]]
+    if sess.get("session"):
+        parts.append("ses-" + sess["session"])
+    target = os.path.join(output_dir, *parts)
+    if not os.path.isdir(target):
+        return
+    for dirpath, _dirs, filenames in os.walk(target):
+        for fname in filenames:
+            try:
+                os.remove(os.path.join(dirpath, fname))
+            except OSError:
+                pass
+
+
 def _run_single(job_id, sess, output_dir, config_file, clobber):
     label = sess["label"]
+    if clobber:
+        _remove_session_bids_files(sess, output_dir)
     cmd = [
         _DCM2BIDS,
         "-d", sess["folder"],
@@ -176,7 +197,7 @@ def _run_single(job_id, sess, output_dir, config_file, clobber):
     if sess.get("session"):
         cmd += ["-s", sess["session"]]
     if clobber:
-        cmd.append("--clobber")
+        cmd += ["--clobber", "--force_dcm2bids"]
 
     _append_log(job_id, {"type": "start", "label": label, "cmd": " ".join(cmd)})
     try:

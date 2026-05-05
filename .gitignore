@@ -8,5 +8,8 @@ dcm2bids_config_pet.json
 .venv
 .DS_Store
 
+# Ignore test files and directories
 tests
 *dev.txt
+.pytest_cache/
+tabs/meg-bids/web

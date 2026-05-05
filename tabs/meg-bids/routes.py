@@ -45,6 +45,7 @@ _PROJECT_ROOT = _detect_project_root(_TAB_DIR)
 _RAW_MEG_DIR = os.path.join(_PROJECT_ROOT, "raw", "natmeg")
 _LEGACY_RAW_MEG_DIR = os.path.join(_PROJECT_ROOT, "raw", "meg")
 _LOGS_DIR = os.path.join(_PROJECT_ROOT, "logs")
+_DEFAULT_CONFIG_FILE = "meg_bids_config.json"
 
 
 def _detect_raw_meg_dir():
@@ -69,11 +70,62 @@ def _resolve_project_path(rel_path):
     return full_path
 
 
+def _build_runtime_config(client_config=None):
+    """Build a runtime config with paths normalized to project-root absolute paths."""
+    config = get_default_config()
+
+    if not client_config:
+        config.update({
+            'Name': os.path.basename(_PROJECT_ROOT),
+            'Root': _PROJECT_ROOT,
+            'Raw': _detect_raw_meg_dir(),
+            'BIDS': _resolve_project_path('BIDS'),
+            'Tasks': [],
+            'Conversion_file': _resolve_project_path('logs/bids_conversion.tsv'),
+            'config_file': _DEFAULT_CONFIG_FILE,
+            'overwrite': False,
+        })
+        return config, None
+
+    name = client_config.get('project_name') or os.path.basename(_PROJECT_ROOT)
+    raw_dir = client_config.get('raw_dir', 'raw/natmeg')
+    bids_dir = client_config.get('bids_dir', 'BIDS')
+    conversion_file = client_config.get('conversion_file', 'logs/bids_conversion.tsv')
+    config_file = client_config.get('config_file', _DEFAULT_CONFIG_FILE)
+
+    raw_path = _resolve_project_path(raw_dir)
+    bids_path = _resolve_project_path(bids_dir)
+    conversion_path = _resolve_project_path(conversion_file)
+    config_file_path = _resolve_project_path(config_file)
+
+    if not raw_path:
+        return None, 'Raw directory path is outside project root'
+    if not bids_path:
+        return None, 'BIDS directory path is outside project root'
+    if not conversion_path:
+        return None, 'Conversion file path is outside project root'
+    if not config_file_path:
+        return None, 'Config file path is outside project root'
+
+    config.update({
+        'Name': name,
+        'Root': _PROJECT_ROOT,
+        'Raw': raw_path,
+        'BIDS': bids_path,
+        'Tasks': client_config.get('tasks', []),
+        'Conversion_file': conversion_path,
+        'config_file': config_file,
+        'overwrite': client_config.get('overwrite', False),
+        'Overwrite_conversion': client_config.get('overwrite_conversion', False),
+    })
+    return config, None
+
+
 # ── Handler functions ─────────────────────────────────────────────────────────
 
 def _handle_get_config(h, params):
     """Return project configuration for the tab."""
-    config_exists = os.path.exists(os.path.join(_PROJECT_ROOT, "meg_config.json"))
+    config_exists = os.path.exists(os.path.join(_PROJECT_ROOT, _DEFAULT_CONFIG_FILE))
     raw_meg_dir = _detect_raw_meg_dir()
     h._send_json({
         "project_root": _PROJECT_ROOT,
@@ -210,24 +262,10 @@ def _handle_run_analysis(h, body):
     force_scan = body.get("force_scan", False)
     client_config = body.get("config")
 
-    if client_config:
-        # Build config from client data
-        config = get_default_config()
-        config.update({
-            'Name': client_config.get('project_name', 'MEG Dataset'),
-            'Root': _PROJECT_ROOT,
-            'Raw': client_config.get('raw_dir', 'raw/natmeg'),
-            'BIDS': client_config.get('bids_dir', 'BIDS'),
-            'Tasks': client_config.get('tasks', []),
-            'Conversion_file': client_config.get('conversion_file', 'logs/bids_conversion.tsv'),
-            'config_file': client_config.get('config_file', 'meg_config.json'),
-            'overwrite': client_config.get('overwrite', False),
-        })
-    else:
-        config = get_default_config()
-        config['Raw'] = _detect_raw_meg_dir()
-        config['BIDS'] = os.path.join(_PROJECT_ROOT, "BIDS")
-        config['Root'] = _PROJECT_ROOT
+    config, config_error = _build_runtime_config(client_config)
+    if config_error:
+        h._send_json({"error": config_error})
+        return
 
     try:
         conversion_table, conversion_file, run_conversion = update_conversion_table(config, force_scan=force_scan)
@@ -248,29 +286,38 @@ def _handle_run_analysis(h, body):
         h._send_json({"error": str(e)})
 
 
+def _handle_load_conversion_table(h, body):
+    """Load existing conversion table using current runtime config."""
+    client_config = body.get("config")
+    config, config_error = _build_runtime_config(client_config)
+    if config_error:
+        h._send_json({"error": config_error})
+        return
+
+    try:
+        conversion_table, conversion_file = load_conversion_table(config, refresh_status=True)
+
+        table_data = conversion_table.fillna('').to_dict('records') if not conversion_table.empty else []
+
+        h._send_json({
+            "ok": True,
+            "table": table_data,
+            "file": conversion_file,
+            "row_count": len(table_data)
+        })
+    except Exception as e:
+        h._send_json({"error": str(e)})
+
+
 def _handle_run_bidsify(h, body):
     """Execute BIDS conversion."""
     verbose = body.get("verbose", False)
     client_config = body.get("config")
 
-    if client_config:
-        # Build config from client data
-        config = get_default_config()
-        config.update({
-            'Name': client_config.get('project_name', 'MEG Dataset'),
-            'Root': _PROJECT_ROOT,
-            'Raw': client_config.get('raw_dir', 'raw/natmeg'),
-            'BIDS': client_config.get('bids_dir', 'BIDS'),
-            'Tasks': client_config.get('tasks', []),
-            'Conversion_file': client_config.get('conversion_file', 'logs/bids_conversion.tsv'),
-            'config_file': client_config.get('config_file', 'meg_config.json'),
-            'overwrite': client_config.get('overwrite', False),
-        })
-    else:
-        config = get_default_config()
-        config['Raw'] = _detect_raw_meg_dir()
-        config['BIDS'] = os.path.join(_PROJECT_ROOT, "BIDS")
-        config['Root'] = _PROJECT_ROOT
+    config, config_error = _build_runtime_config(client_config)
+    if config_error:
+        h._send_json({"error": config_error})
+        return
 
     try:
         # Run conversion (this may take a while)
@@ -289,24 +336,10 @@ def _handle_run_report(h, body):
     """Generate BIDS report and QA analysis."""
     client_config = body.get("config")
 
-    if client_config:
-        # Build config from client data
-        config = get_default_config()
-        config.update({
-            'Name': client_config.get('project_name', 'MEG Dataset'),
-            'Root': _PROJECT_ROOT,
-            'Raw': client_config.get('raw_dir', 'raw/natmeg'),
-            'BIDS': client_config.get('bids_dir', 'BIDS'),
-            'Tasks': client_config.get('tasks', []),
-            'Conversion_file': client_config.get('conversion_file', 'logs/bids_conversion.tsv'),
-            'config_file': client_config.get('config_file', 'meg_config.json'),
-            'overwrite': client_config.get('overwrite', False),
-        })
-    else:
-        config = get_default_config()
-        config['Raw'] = _detect_raw_meg_dir()
-        config['BIDS'] = os.path.join(_PROJECT_ROOT, "BIDS")
-        config['Root'] = _PROJECT_ROOT
+    config, config_error = _build_runtime_config(client_config)
+    if config_error:
+        h._send_json({"error": config_error})
+        return
 
     try:
         conversion_table, _ = load_conversion_table(config, refresh_status=False)
@@ -342,22 +375,10 @@ def _handle_get_report(h, body):
     """Get the BIDS report data."""
     client_config = body.get("config")
 
-    if client_config:
-        # Build config from client data
-        config = get_default_config()
-        config.update({
-            'Name': client_config.get('project_name', 'MEG Dataset'),
-            'Root': _PROJECT_ROOT,
-            'Raw': client_config.get('raw_dir', 'raw/natmeg'),
-            'BIDS': client_config.get('bids_dir', 'BIDS'),
-            'Tasks': client_config.get('tasks', []),
-            'Conversion_file': client_config.get('conversion_file', 'logs/bids_conversion.tsv'),
-            'config_file': client_config.get('config_file', 'meg_config.json'),
-            'overwrite': client_config.get('overwrite', False),
-        })
-    else:
-        config = get_default_config()
-        config['Root'] = _PROJECT_ROOT
+    config, config_error = _build_runtime_config(client_config)
+    if config_error:
+        h._send_json({"error": config_error})
+        return
 
     logPath = setLogPath(config)
     report_file = os.path.join(logPath, 'bids_results.json')
@@ -395,7 +416,7 @@ def _handle_get_static_js(h, params):
 def _handle_save_config(h, body):
     """Save configuration file to project path."""
     config_data = body.get("config", {})
-    config_file = body.get("config_file", "meg_config.json")
+    config_file = body.get("config_file", _DEFAULT_CONFIG_FILE)
 
     if not config_file:
         h.send_error(400, "Missing config file path")
@@ -434,6 +455,7 @@ def register(get_routes, post_routes):
     get_routes["/meg-tab.js"] = _handle_get_static_js
 
     post_routes["/meg-save-conversion-table"] = _handle_save_conversion_table
+    post_routes["/meg-load-conversion-table"] = _handle_load_conversion_table
     post_routes["/meg-save-config"] = _handle_save_config
     post_routes["/meg-run-analysis"] = _handle_run_analysis
     post_routes["/meg-run-bidsify"] = _handle_run_bidsify

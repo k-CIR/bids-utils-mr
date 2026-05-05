@@ -57,14 +57,17 @@ def load_minimal_config(config_path: str) -> Dict[str, Any]:
     with open(config_path, 'r') as f:
         minimal = json.load(f)
 
-    # Get raw_dir to determine root
+    # Prefer explicit project root hints; otherwise infer from config file location.
     raw_dir = minimal.get('raw_dir', '')
+    config_root = minimal.get('root') or minimal.get('project_root')
+    if not config_root:
+        config_root = dirname(os.path.abspath(config_path))
     
     # Convert minimal config to full config format
     config = DEFAULT_SIMPLE_CONFIG.copy()
     config.update({
         'Name': minimal.get('project_name', 'MEG Dataset'),
-        'Root': dirname(raw_dir) if raw_dir else '',
+        'Root': config_root,
         'Raw': raw_dir,
         'BIDS': minimal.get('bids_dir', ''),
         'Tasks': minimal.get('tasks', []),

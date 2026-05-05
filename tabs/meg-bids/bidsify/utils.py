@@ -17,18 +17,26 @@ def setLogPath(config: dict = None, LogPath: str = None):
 
     project_name = config.get('Name', {}) or config.get('name', {}) or ''
     root = config.get('Root', {}) or config.get('root', '')
+    path_BIDS = config.get('BIDS') or config.get('bids') or config.get('BIDSPath') or config.get('bids_path') or None
 
     # Check project root and name to not duplicate project name
     project_root = join(root, project_name) if project_name != basename(root) else root
     log_path = join(project_root, 'logs')
 
-    # If not log_path exists try via BIDS path
+    if project_root and exists(project_root):
+        os.makedirs(log_path, exist_ok=True)
+        return log_path
+
+    # If project logs path is missing, try deriving it via BIDS path.
     if not log_path or not exists(log_path):
-        path_BIDS = config.get('BIDS') or config.get('bids') or config.get('BIDSPath') or config.get('bids_path') or None
         log_path = join(dirname(path_BIDS), 'logs') if path_BIDS else None
 
-        if log_path and exists(log_path):
-            # As a last resort, use ./logs in CWD and warn
+        if log_path:
+            os.makedirs(log_path, exist_ok=True)
+            return log_path
+
+        if not log_path or not exists(log_path):
+            # As a last resort, use ./logs in CWD and warn.
             log_path = './logs'
             print(f"[WARN] Log path missing; falling back to log path: {log_path}")
             os.makedirs(log_path, exist_ok=True)

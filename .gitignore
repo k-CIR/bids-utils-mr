@@ -7,3 +7,6 @@ dcm2bids_config_pet.json
 
 .venv
 .DS_Store
+
+tests
+*dev.txt

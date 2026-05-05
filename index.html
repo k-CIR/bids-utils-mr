@@ -325,6 +325,22 @@
         btn.onclick = () => switchTab(tab.id);
         tabBar.appendChild(btn);
 
+        const wrap = document.createElement('div');
+        wrap.id = 'tabwrap-' + tab.id;
+        wrap.style.display = (i === 0) ? '' : 'none';
+        container.appendChild(wrap);
+
+        if (tab.type === 'overview') {
+          // Render as a full-height iframe preserving the file's own styles
+          const iframe = document.createElement('iframe');
+          iframe.src = addTokenToUrl('/overview-file');
+          iframe.style.cssText =
+            'display:block;width:100%;height:calc(100vh - 140px);border:none;background:#fff;border-radius:3px;';
+          iframe.title = 'Project Overview';
+          wrap.appendChild(iframe);
+          continue;
+        }
+
         // Load + inject tab fragment
         let html = '';
         try {
@@ -332,11 +348,7 @@
           if (r.ok) html = await r.text();
         } catch (_) {}
 
-        const wrap = document.createElement('div');
-        wrap.id = 'tabwrap-' + tab.id;
-        wrap.style.display = (i === 0) ? '' : 'none';
         wrap.innerHTML = html;
-        container.appendChild(wrap);
 
         // Execute inline scripts from the injected fragment
         wrap.querySelectorAll('script').forEach(old => {

@@ -25,7 +25,7 @@ DEFAULT_SIMPLE_CONFIG = {
     'Raw': '',
     'BIDS': '',
     'Tasks': [],
-    'Conversion_file': 'logs/bids_conversion.tsv',
+    'Conversion_file': 'utils/meg_bids_conversion.tsv',
     'overwrite': False,
     'Overwrite_conversion': False,
     'Participants_mapping_file': '',
@@ -50,7 +50,7 @@ def load_minimal_config(config_path: str) -> Dict[str, Any]:
         "raw_dir": "raw/natmeg",
         "bids_dir": "BIDS",
         "tasks": ["rest", "task1"],
-        "conversion_file": "logs/bids_conversion.tsv",
+        "conversion_file": "utils/meg_bids_conversion.tsv",
         "overwrite": false
     }
     """
@@ -71,7 +71,7 @@ def load_minimal_config(config_path: str) -> Dict[str, Any]:
         'Raw': raw_dir,
         'BIDS': minimal.get('bids_dir', ''),
         'Tasks': minimal.get('tasks', []),
-        'Conversion_file': minimal.get('conversion_file', 'logs/bids_conversion.tsv'),
+        'Conversion_file': minimal.get('conversion_file', 'utils/meg_bids_conversion.tsv'),
         'overwrite': minimal.get('overwrite', False),
         # Use fixed calibration/crosstalk paths from constants
         'Calibration': CALIBRATION_PATH,

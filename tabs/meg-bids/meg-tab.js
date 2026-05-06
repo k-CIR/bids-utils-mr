@@ -57,7 +57,7 @@
       raw_dir: 'raw/natmeg',
       bids_dir: 'BIDS',
       tasks: [],
-      conversion_file: 'logs/bids_conversion.tsv',
+      conversion_file: 'utils/meg_bids_conversion.tsv',
       config_file: 'meg_bids_config.json',
       overwrite: false
     },
@@ -79,6 +79,14 @@
       runs: new Set(),
       datatypes: new Set(),
       rawNames: new Set()
+    },
+
+    statusLegendMeta: {
+      run: { label: 'ready to convert', icon: '▶' },
+      check: { label: 'needs review', icon: '⚠' },
+      processed: { label: 'already converted', icon: '✓' },
+      skip: { label: 'ignore', icon: '⏭' },
+      missing: { label: 'source file not found', icon: '✖' }
     },
 
     // Sort state
@@ -233,7 +241,7 @@
     syncFormToJson: function() {
       this.config.raw_dir = document.getElementById('megCfgRawDir')?.value || 'raw/natmeg';
       this.config.bids_dir = document.getElementById('megCfgBidsDir')?.value || 'BIDS';
-      this.config.conversion_file = document.getElementById('megCfgConversionFile')?.value || 'logs/bids_conversion.tsv';
+      this.config.conversion_file = document.getElementById('megCfgConversionFile')?.value || 'utils/meg_bids_conversion.tsv';
       this.config.config_file = document.getElementById('megCfgConfigFile')?.value || 'meg_bids_config.json';
       this.config.overwrite = document.getElementById('megCfgOverwrite')?.checked || false;
       this.config.tasks = this.config.tasks || [];
@@ -422,14 +430,14 @@
         raw_dir: 'raw/natmeg',
         bids_dir: 'BIDS',
         tasks: [],
-        conversion_file: 'logs/bids_conversion.tsv',
+        conversion_file: 'utils/meg_bids_conversion.tsv',
         config_file: 'meg_bids_config.json',
         overwrite: false
       };
 
       document.getElementById('megCfgRawDir').value = 'raw/natmeg';
       document.getElementById('megCfgBidsDir').value = 'BIDS';
-      document.getElementById('megCfgConversionFile').value = 'logs/bids_conversion.tsv';
+      document.getElementById('megCfgConversionFile').value = 'utils/meg_bids_conversion.tsv';
       document.getElementById('megCfgConfigFile').value = 'meg_bids_config.json';
       document.getElementById('megCfgOverwrite').checked = false;
 
@@ -460,7 +468,7 @@
           raw_dir: serverConfig.Raw || 'raw/natmeg',
           bids_dir: serverConfig.BIDS || 'BIDS',
           tasks: serverConfig.Tasks || [],
-          conversion_file: serverConfig.Conversion_file || 'logs/bids_conversion.tsv',
+          conversion_file: serverConfig.Conversion_file || 'utils/meg_bids_conversion.tsv',
           config_file: serverConfig.config_file || 'meg_bids_config.json',
           overwrite: serverConfig.overwrite || false
         };
@@ -532,6 +540,7 @@
         if (searchEl) {
           searchEl.addEventListener('input', Utils.debounce(() => this.applyFilters(), 200));
         }
+        this.renderStatusLegend();
 
         this.setupHeaderFilterPickers();
 
@@ -568,7 +577,7 @@
         const tablePathInput = document.getElementById('megTablePath');
         if (tablePathInput) {
           tablePathInput.addEventListener('input', () => {
-            megBids.config.conversion_file = tablePathInput.value || 'logs/bids_conversion.tsv';
+            megBids.config.conversion_file = tablePathInput.value || 'utils/meg_bids_conversion.tsv';
             const cfgConv = document.getElementById('megCfgConversionFile');
             if (cfgConv) cfgConv.value = megBids.config.conversion_file;
             megBids.updateJsonDisplay();
@@ -832,11 +841,45 @@
           if (saveBtn) saveBtn.disabled = true;
 
           megBids.setStatus('megTableStatus', `Found ${data.row_count} files. Click a row to edit.`);
+          this.renderStatusLegend();
         } catch (e) {
           megBids.setStatus('megTableStatus', 'Failed: ' + e.message, 'warn');
+          this.renderStatusLegend();
         } finally {
           if (btn) btn.disabled = false;
         }
+      },
+
+      renderStatusLegend: function() {
+        const legend = document.getElementById('megStatusLegend');
+        if (!legend) return;
+
+        if (!Array.isArray(megBids.tableData) || megBids.tableData.length === 0) {
+          legend.innerHTML = '';
+          legend.style.display = 'none';
+          return;
+        }
+
+        const counts = { run: 0, check: 0, processed: 0, skip: 0, missing: 0 };
+        megBids.tableData.forEach((row) => {
+          const status = String(row?.status || '').toLowerCase();
+          if (Object.prototype.hasOwnProperty.call(counts, status)) {
+            counts[status] += 1;
+          }
+        });
+
+        const order = ['run', 'check', 'processed', 'skip', 'missing'];
+        legend.innerHTML = order.map((status) => {
+          const meta = megBids.statusLegendMeta[status];
+          return `
+            <span class="status-legend-item status-${status}">
+              <span class="status-legend-icon" aria-hidden="true">${meta.icon}</span>
+              <span><strong>${Utils.escapeHtml(status)}</strong> = <span class="status-legend-count">${counts[status]}</span> ${Utils.escapeHtml(meta.label)}</span>
+            </span>
+          `;
+        }).join('');
+
+        legend.style.display = 'flex';
       },
 
       // Populate filter dropdowns
@@ -966,6 +1009,7 @@
         // Clear selection when filters change
         megBids.selectedRows.clear();
         this.updateBatchActions();
+        this.renderStatusLegend();
         this.renderFilterPills();
         this.renderVisibleRows(true);
       },
@@ -1084,8 +1128,12 @@
 
       createPill: function(label, value, type) {
         const encodedValue = encodeURIComponent(value);
+        const typeClass = `filter-pill-type-${type}`;
+        const statusClass = type === 'statuses'
+          ? `filter-pill-status-${String(value || '').toLowerCase().replace(/[^a-z0-9_-]/g, '-')}`
+          : '';
         return `
-          <span class="filter-pill">
+          <span class="filter-pill ${typeClass} ${statusClass}">
             <span class="filter-pill-label">${Utils.escapeHtml(label)}:</span>
             <span class="filter-pill-value">${Utils.escapeHtml(value)}</span>
             <button class="filter-pill-remove" data-filter-type="${type}" data-filter-value="${encodedValue}" title="Remove filter">×</button>
@@ -1271,6 +1319,14 @@
         const sourceEl = document.getElementById('megEditSource');
         if (sourceEl) {
           sourceEl.textContent = `${row.raw_path || ''}/${row.raw_name || ''}`;
+        }
+
+        const convertedEl = document.getElementById('megEditConverted');
+        if (convertedEl) {
+          const isProcessed = String(row.status || '').toLowerCase() === 'processed';
+          const convertedPath = (row.bids_path && row.bids_name) ? `${row.bids_path}/${row.bids_name}` : '';
+          convertedEl.textContent = (isProcessed && convertedPath) ? convertedPath : 'Not converted yet';
+          convertedEl.style.color = (isProcessed && convertedPath) ? '#8cb4ff' : '#888';
         }
 
         // Update live preview
@@ -1539,6 +1595,79 @@
         const progressSection = document.getElementById('megProgressSection');
         if (progressSection) progressSection.style.display = 'block';
 
+        const progressFill = document.querySelector('#megProgressBar > div');
+        const progressText = document.getElementById('megProgressText');
+        const jobStatusWrap = document.getElementById('megJobStatus');
+        const jobIdEl = document.getElementById('megJobId');
+        const jobStatusTextEl = document.getElementById('megJobStatusText');
+
+        let progressTimer = null;
+        let progressValue = 0;
+
+        const setProgress = (value, text) => {
+          const clamped = Math.max(0, Math.min(100, value));
+          if (progressFill) progressFill.style.width = `${clamped}%`;
+          if (progressText) progressText.textContent = text || `${Math.round(clamped)}%`;
+        };
+
+        const startProgressAnimation = () => {
+          progressValue = 6;
+          setProgress(progressValue, 'Preparing conversion...');
+          progressTimer = window.setInterval(() => {
+            const step = progressValue < 55 ? 5 : (progressValue < 80 ? 2.5 : 1);
+            progressValue = Math.min(92, progressValue + step);
+            setProgress(progressValue, `${Math.round(progressValue)}% - Preparing conversion...`);
+          }, 700);
+        };
+
+        const stopProgressAnimation = () => {
+          if (progressTimer !== null) {
+            window.clearInterval(progressTimer);
+            progressTimer = null;
+          }
+        };
+
+        const formatCounts = (counts) => {
+          if (!counts || typeof counts !== 'object') return 'none';
+          const keys = Object.keys(counts).sort();
+          if (!keys.length) return 'none';
+          return keys.map((k) => `${k}=${counts[k]}`).join(', ');
+        };
+
+        const refreshConversionTable = async () => {
+          try {
+            const serverConfig = {
+              project_name: megBids.config.project_name,
+              raw_dir: megBids.config.raw_dir,
+              bids_dir: megBids.config.bids_dir,
+              tasks: megBids.config.tasks,
+              conversion_file: megBids.config.conversion_file,
+              config_file: megBids.config.config_file,
+              overwrite: megBids.config.overwrite
+            };
+            const tableRes = await fetch(Utils.apiPath('/meg-load-conversion-table'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ config: serverConfig })
+            });
+            const tableData = await tableRes.json();
+            if (tableData.error) return;
+
+            megBids.tableData = tableData.table || [];
+            megBids.originalData = JSON.parse(JSON.stringify(tableData.table || []));
+            megBids.tableSearchIndex = megBids.tableData.map(row => this.buildRowSearchText(row));
+            if (tableData.file) {
+              megBids.tableFile = tableData.file;
+              megBids.config.conversion_file = tableData.file;
+            }
+            this.populateFilters();
+            this.applyFilters();
+          } catch (_) {
+            // Keep UI responsive even if refresh fails.
+          }
+        };
+
+        startProgressAnimation();
         megBids.setStatus('megConversionStatus', 'Running BIDS conversion...');
 
         const output = document.getElementById('megOutput');
@@ -1560,20 +1689,93 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ config: serverConfig, verbose: verbose })
           });
-
           const data = await res.json();
 
-          if (data.error) {
-            if (output) output.textContent += '\nError: ' + data.error;
+          if (data.error || !data.job_id) {
+            stopProgressAnimation();
+            setProgress(Math.max(progressValue, 95), 'Conversion failed');
+            if (output) output.textContent += '\nError: ' + (data.error || 'No job id returned');
             megBids.setStatus('megConversionStatus', 'Conversion failed', 'warn');
-          } else {
-            if (output) output.textContent += '\n' + (data.message || 'Conversion completed!');
-            megBids.setStatus('megConversionStatus', 'Conversion completed successfully');
+            return;
+          }
+
+          const jobId = data.job_id;
+          if (jobStatusWrap) jobStatusWrap.style.display = 'block';
+          if (jobIdEl) jobIdEl.textContent = jobId;
+          if (jobStatusTextEl) jobStatusTextEl.textContent = 'Running';
+
+          const setupWeight = 8;
+          const writeWeight = 88;
+
+          while (true) {
+            const progressRes = await fetch(Utils.apiPath(`/meg-bidsify-progress?job_id=${encodeURIComponent(jobId)}`));
+            const progressData = await progressRes.json();
+
+            if (progressData.error || !progressData.job) {
+              setProgress(Math.max(progressValue, 95), 'Conversion failed');
+              if (output) output.textContent += '\nProgress error: ' + (progressData.error || 'Unknown progress error');
+              megBids.setStatus('megConversionStatus', 'Conversion failed', 'warn');
+              break;
+            }
+
+            stopProgressAnimation();
+            const job = progressData.job;
+            const total = Math.max(0, Number(job.total || 0));
+            const processed = Math.max(0, Number(job.processed || 0));
+            const errors = Math.max(0, Number(job.errors || 0));
+            const stage = String(job.stage || '').toLowerCase();
+            const currentFile = job.current_file ? ` (${job.current_file})` : '';
+
+            let fileFraction = total > 0 ? (processed / total) : 0;
+            if (stage === 'writing' && total > 0) {
+              fileFraction = Math.min(1, (processed + 0.45) / total);
+            }
+
+            let percent = setupWeight + (fileFraction * writeWeight);
+            if (stage === 'reporting' || stage === 'sidecars') percent = Math.max(percent, 97);
+            if (job.done && job.state === 'completed') percent = 100;
+            if (job.done && job.state === 'failed') percent = Math.max(percent, 95);
+
+            const statusLine = `${processed}/${total} files, ${errors} errors`;
+            const stageMessage = job.message || 'Running conversion';
+            progressValue = percent;
+            setProgress(percent, `${Math.round(percent)}% - ${stageMessage}${currentFile} - ${statusLine}`);
+            if (jobStatusTextEl) jobStatusTextEl.textContent = `${stageMessage} (${statusLine})`;
+
+            if (job.done) {
+              if (job.state === 'completed') {
+                const summary = job.summary || {};
+                if (output) {
+                  const lines = [];
+                  lines.push(job.message || 'Conversion completed!');
+                  lines.push(`Total files: ${summary.total ?? 0}`);
+                  lines.push(`Files selected to process: ${summary.to_process ?? 0}`);
+                  lines.push(`Processed in this run: ${summary.processed_now ?? 0}`);
+                  lines.push(`Errors in this run: ${summary.errors_now ?? 0}`);
+                  lines.push(`Initial statuses: ${formatCounts(summary.initial_status_counts)}`);
+                  lines.push(`Final statuses: ${formatCounts(summary.final_status_counts)}`);
+                  lines.push(`Report entries updated: ${summary.report_updates ?? 0}`);
+                  if (summary.message) lines.push(`Pipeline note: ${summary.message}`);
+                  output.textContent += '\n' + lines.join('\n');
+                }
+                megBids.setStatus('megConversionStatus', 'Conversion completed successfully');
+                await refreshConversionTable();
+              } else {
+                if (output) output.textContent += '\nError: ' + (job.error || 'Conversion failed');
+                megBids.setStatus('megConversionStatus', 'Conversion failed', 'warn');
+              }
+              break;
+            }
+
+            await new Promise((resolve) => window.setTimeout(resolve, 700));
           }
         } catch (e) {
+          stopProgressAnimation();
+          setProgress(Math.max(progressValue, 95), 'Conversion failed');
           if (output) output.textContent += '\nFailed: ' + e.message;
           megBids.setStatus('megConversionStatus', 'Conversion failed: ' + e.message, 'warn');
         } finally {
+          stopProgressAnimation();
           if (btn) btn.disabled = false;
         }
       },

@@ -34,7 +34,7 @@ except ImportError:
 mne.set_log_level('WARNING')
 
 
-def bidsify(config: dict, conversion_table=None, conversion_file=None, force_scan: bool = False, verbose: bool = False):
+def bidsify(config: dict, conversion_table=None, conversion_file=None, force_scan: bool = False, verbose: bool = False, progress_callback=None):
     """
     Main function to convert raw MEG/EEG data to BIDS format.
     """
@@ -49,14 +49,34 @@ def bidsify(config: dict, conversion_table=None, conversion_file=None, force_sca
     participant_mapping = join(path_project, config.get('Participants_mapping_file', ''))
     logPath = setLogPath(config)
 
+    def _emit_progress(payload: dict):
+        if callable(progress_callback):
+            try:
+                progress_callback(payload)
+            except Exception:
+                pass
+
     if conversion_table is None or conversion_file is None:
         df, conversion_file, _ = update_conversion_table(config, force_scan=force_scan)
     else:
         df = conversion_table
 
+    summary = {
+        'total': 0,
+        'to_process': 0,
+        'initial_status_counts': {},
+        'processed_now': 0,
+        'errors_now': 0,
+        'final_status_counts': {},
+        'report_updates': 0,
+        'message': ''
+    }
+
     if df.empty or not conversion_file:
         print("Conversion table empty or not defined")
-        return
+        summary['message'] = 'Conversion table empty or not defined'
+        _emit_progress({'stage': 'done', 'message': summary['message'], 'summary': summary})
+        return summary
 
     df = df.where(pd.notnull(df) & (df != ''), None)
 
@@ -96,9 +116,20 @@ def bidsify(config: dict, conversion_table=None, conversion_file=None, force_sca
 
     deviants = df[df['status'] == 'check']
     if len(deviants) > 0:
-        print('Deviant tasks found, please check the conversion table and run again')
+        print("""
+              There are files marked "check" that require manual review before conversion
+              
+              Please modify in the editor.
+              
+              """)
         df.to_csv(conversion_file, sep='\t', index=False)
-        return
+        summary['total'] = len(df)
+        summary['to_process'] = 0
+        summary['initial_status_counts'] = df['status'].fillna('error').value_counts().to_dict()
+        summary['final_status_counts'] = summary['initial_status_counts']
+        summary['message'] = 'Conversion blocked: files marked as check require manual review'
+        _emit_progress({'stage': 'done', 'message': summary['message'], 'summary': summary})
+        return summary
 
     if overwrite:
         process_mask = pd.Series([True] * len(df), index=df.index)
@@ -108,6 +139,16 @@ def bidsify(config: dict, conversion_table=None, conversion_file=None, force_sca
     df['status'] = df['status'].fillna('error')
     status_counts = df['status'].value_counts().to_dict()
     n_files_to_process = int(process_mask.sum())
+    summary['total'] = len(df)
+    summary['to_process'] = n_files_to_process
+    summary['initial_status_counts'] = status_counts
+    _emit_progress({
+        'stage': 'starting',
+        'message': 'Starting BIDS conversion',
+        'total': n_files_to_process,
+        'processed': 0,
+        'errors': 0
+    })
     print(
         "Run summary: total={total} to_process={to_process} run={run} check={check} processed={processed} skip={skip} missing={missing} error={error}".format(
             total=len(df),
@@ -122,7 +163,10 @@ def bidsify(config: dict, conversion_table=None, conversion_file=None, force_sca
     )
     if not overwrite and n_files_to_process == 0:
         print("No files marked 'run' to convert. Exiting bidsify process.")
-        return
+        summary['final_status_counts'] = status_counts
+        summary['message'] = "No files marked 'run' to convert"
+        _emit_progress({'stage': 'done', 'message': summary['message'], 'summary': summary})
+        return summary
 
     pbar = tqdm(
         total=n_files_to_process,
@@ -133,9 +177,19 @@ def bidsify(config: dict, conversion_table=None, conversion_file=None, force_sca
         bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]'
     )
     pcount = 0
+    processed_now = 0
+    errors_now = 0
     for i, d in df[process_mask].iterrows():
         try:
             pcount += 1
+            _emit_progress({
+                'stage': 'writing',
+                'message': f"Writing BIDS file {pcount}/{n_files_to_process}",
+                'total': n_files_to_process,
+                'processed': processed_now,
+                'errors': errors_now,
+                'current_file': d.get('raw_name')
+            })
             if verbose:
                 print(f"Processing file {pcount}/{n_files_to_process} [{d['status']}]: {d['raw_name']}")
                 print(f"  Raw file: {d['raw_path']}/{d['raw_name']}")
@@ -251,7 +305,16 @@ def bidsify(config: dict, conversion_table=None, conversion_file=None, force_sca
                 add_channel_parameters(bids_tsv, opm_tsv)
 
             df.at[i, 'status'] = 'processed'
+            processed_now += 1
             df = _record_processing_success(df, i)
+            _emit_progress({
+                'stage': 'file-done',
+                'message': f"Completed file {pcount}/{n_files_to_process}",
+                'total': n_files_to_process,
+                'processed': processed_now,
+                'errors': errors_now,
+                'current_file': d.get('raw_name')
+            })
 
         except Exception as e:
             print(f"Error processing file {d['raw_name']}: {e}")
@@ -263,6 +326,15 @@ def bidsify(config: dict, conversion_table=None, conversion_file=None, force_sca
                 print(f"  Full traceback:")
                 traceback.print_exc()
             df.at[i, 'status'] = 'error'
+            errors_now += 1
+            _emit_progress({
+                'stage': 'file-error',
+                'message': f"Error in file {pcount}/{n_files_to_process}",
+                'total': n_files_to_process,
+                'processed': processed_now,
+                'errors': errors_now,
+                'current_file': d.get('raw_name')
+            })
 
         df.at[i, 'time_stamp'] = ts
         df.at[i, 'bids_path'] = dirname(bids_path)
@@ -271,8 +343,23 @@ def bidsify(config: dict, conversion_table=None, conversion_file=None, force_sca
 
     pbar.close()
 
-    update_bids_report(df, config)
+    _emit_progress({
+        'stage': 'reporting',
+        'message': 'Updating BIDS report',
+        'total': n_files_to_process,
+        'processed': processed_now,
+        'errors': errors_now
+    })
+    report_updates = update_bids_report(df, config)
+    final_status_counts = df['status'].fillna('error').value_counts().to_dict()
+    summary['processed_now'] = processed_now
+    summary['errors_now'] = errors_now
+    summary['final_status_counts'] = final_status_counts
+    summary['report_updates'] = int(report_updates or 0)
+    summary['message'] = 'BIDS conversion completed'
+    _emit_progress({'stage': 'done', 'message': summary['message'], 'summary': summary})
     print(f"All files bidsified according to {conversion_file}")
+    return summary
 
 
 def update_bids_report(conversion_table: pd.DataFrame, config: dict):

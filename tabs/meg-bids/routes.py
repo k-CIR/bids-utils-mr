@@ -8,6 +8,9 @@ import json
 import os
 import re
 import sys
+import threading
+import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -46,6 +49,65 @@ _RAW_MEG_DIR = os.path.join(_PROJECT_ROOT, "raw", "natmeg")
 _LEGACY_RAW_MEG_DIR = os.path.join(_PROJECT_ROOT, "raw", "meg")
 _LOGS_DIR = os.path.join(_PROJECT_ROOT, "logs")
 _DEFAULT_CONFIG_FILE = "meg_bids_config.json"
+_MEG_BIDS_JOBS = {}
+_MEG_BIDS_JOBS_LOCK = threading.Lock()
+
+
+def _update_bids_job(job_id, **fields):
+    with _MEG_BIDS_JOBS_LOCK:
+        if job_id in _MEG_BIDS_JOBS:
+            _MEG_BIDS_JOBS[job_id].update(fields)
+            _MEG_BIDS_JOBS[job_id]['updated_at'] = time.time()
+
+
+def _run_bidsify_job(job_id, config, verbose):
+    try:
+        _update_bids_job(job_id, state='running', stage='setup', message='Preparing dataset metadata')
+        create_dataset_description(config)
+        create_proc_description(config)
+
+        _update_bids_job(job_id, stage='loading', message='Loading conversion table')
+        conversion_table, conversion_file = load_conversion_table(config, refresh_status=False)
+
+        def _progress_cb(payload):
+            _update_bids_job(
+                job_id,
+                stage=payload.get('stage', ''),
+                message=payload.get('message', ''),
+                total=int(payload.get('total', 0) or 0),
+                processed=int(payload.get('processed', 0) or 0),
+                errors=int(payload.get('errors', 0) or 0),
+                current_file=payload.get('current_file')
+            )
+
+        summary = bidsify(
+            config,
+            conversion_table=conversion_table,
+            conversion_file=conversion_file,
+            verbose=verbose,
+            progress_callback=_progress_cb,
+        )
+
+        _update_bids_job(job_id, stage='sidecars', message='Updating sidecars')
+        update_sidecars(config)
+
+        if not isinstance(summary, dict):
+            summary = {}
+
+        final_counts = summary.get('final_status_counts', {})
+        message = (
+            "BIDS conversion completed: "
+            f"total={summary.get('total', 0)}, "
+            f"attempted={summary.get('to_process', 0)}, "
+            f"processed_now={summary.get('processed_now', 0)}, "
+            f"errors_now={summary.get('errors_now', 0)}, "
+            f"processed_total={final_counts.get('processed', 0)}, "
+            f"error_total={final_counts.get('error', 0)}"
+        )
+
+        _update_bids_job(job_id, state='completed', stage='done', done=True, summary=summary, message=message)
+    except Exception as e:
+        _update_bids_job(job_id, state='failed', stage='failed', done=True, error=str(e), message='Conversion failed')
 
 
 def _detect_raw_meg_dir():
@@ -81,7 +143,7 @@ def _build_runtime_config(client_config=None):
             'Raw': _detect_raw_meg_dir(),
             'BIDS': _resolve_project_path('BIDS'),
             'Tasks': [],
-            'Conversion_file': _resolve_project_path('logs/bids_conversion.tsv'),
+            'Conversion_file': _resolve_project_path('utils/meg_bids_conversion.tsv'),
             'config_file': _DEFAULT_CONFIG_FILE,
             'overwrite': False,
         })
@@ -90,7 +152,7 @@ def _build_runtime_config(client_config=None):
     name = client_config.get('project_name') or os.path.basename(_PROJECT_ROOT)
     raw_dir = client_config.get('raw_dir', 'raw/natmeg')
     bids_dir = client_config.get('bids_dir', 'BIDS')
-    conversion_file = client_config.get('conversion_file', 'logs/bids_conversion.tsv')
+    conversion_file = client_config.get('conversion_file', 'utils/meg_bids_conversion.tsv')
     config_file = client_config.get('config_file', _DEFAULT_CONFIG_FILE)
 
     raw_path = _resolve_project_path(raw_dir)
@@ -310,7 +372,7 @@ def _handle_load_conversion_table(h, body):
 
 
 def _handle_run_bidsify(h, body):
-    """Execute BIDS conversion."""
+    """Start asynchronous BIDS conversion job."""
     verbose = body.get("verbose", False)
     client_config = body.get("config")
 
@@ -319,17 +381,44 @@ def _handle_run_bidsify(h, body):
         h._send_json({"error": config_error})
         return
 
-    try:
-        # Run conversion (this may take a while)
-        create_dataset_description(config)
-        create_proc_description(config)
-        conversion_table, conversion_file = load_conversion_table(config, refresh_status=False)
-        bidsify(config, conversion_table=conversion_table, conversion_file=conversion_file, verbose=verbose)
-        update_sidecars(config)
+    job_id = uuid.uuid4().hex[:12]
+    with _MEG_BIDS_JOBS_LOCK:
+        _MEG_BIDS_JOBS[job_id] = {
+            'job_id': job_id,
+            'state': 'queued',
+            'stage': 'queued',
+            'message': 'Queued',
+            'total': 0,
+            'processed': 0,
+            'errors': 0,
+            'current_file': None,
+            'done': False,
+            'summary': None,
+            'error': None,
+            'updated_at': time.time(),
+        }
 
-        h._send_json({"ok": True, "message": "BIDS conversion completed"})
-    except Exception as e:
-        h._send_json({"error": str(e)})
+    worker = threading.Thread(target=_run_bidsify_job, args=(job_id, config, verbose), daemon=True)
+    worker.start()
+
+    h._send_json({"ok": True, "job_id": job_id, "message": "BIDS conversion started"})
+
+
+def _handle_bidsify_progress(h, params):
+    """Return current progress for a BIDS conversion job."""
+    job_id = params.get("job_id", [None])[0]
+    if not job_id:
+        h._send_json({"error": "Missing job_id"})
+        return
+
+    with _MEG_BIDS_JOBS_LOCK:
+        job = _MEG_BIDS_JOBS.get(job_id)
+
+    if not job:
+        h._send_json({"error": "Unknown job_id"})
+        return
+
+    h._send_json({"ok": True, "job": job})
 
 
 def _handle_run_report(h, body):
@@ -452,6 +541,7 @@ def register(get_routes, post_routes):
     get_routes["/meg-get-project-root"] = _handle_get_project_root
     get_routes["/meg-load-config"] = _handle_load_config
     get_routes["/meg-get-conversion-table"] = _handle_get_conversion_table
+    get_routes["/meg-bidsify-progress"] = _handle_bidsify_progress
     get_routes["/meg-tab.js"] = _handle_get_static_js
 
     post_routes["/meg-save-conversion-table"] = _handle_save_conversion_table

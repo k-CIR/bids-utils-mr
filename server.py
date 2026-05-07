@@ -9,11 +9,20 @@ Each routes.py must define:
 import os
 import sys
 
-# ── Ensure .venv is used if it exists ─────────────────────────────────────────
-_script_dir = os.path.dirname(os.path.abspath(__file__))
-_venv_python = os.path.join(_script_dir, ".venv", "bin", "python3")
-if os.path.isfile(_venv_python) and sys.executable != _venv_python:
-    os.execv(_venv_python, [_venv_python] + sys.argv)
+# ── Ensure the cir-utils conda env is used ────────────────────────────────────
+_conda_env_bin = "/opt/anaconda3/envs/cir-utils/bin"
+_conda_python  = os.path.join(_conda_env_bin, "python3")
+
+# Replace PATH so subprocesses resolve tools exclusively from the cir-utils env.
+# Other conda env bin dirs are stripped; standard system paths are preserved.
+_CONDA_ROOT = "/opt/anaconda3"
+_system_path_entries = [
+    p for p in os.environ.get("PATH", "").split(os.pathsep)
+    if not p.startswith(_CONDA_ROOT)
+]
+os.environ["PATH"] = os.pathsep.join([_conda_env_bin] + _system_path_entries)
+if os.path.isfile(_conda_python) and os.path.realpath(sys.executable) != os.path.realpath(_conda_python):
+    os.execv(_conda_python, [_conda_python] + sys.argv)
 
 import http.server
 import importlib.util

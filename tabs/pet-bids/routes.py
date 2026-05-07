@@ -12,6 +12,12 @@ import sys
 from pathlib import Path
 from urllib.parse import quote, unquote
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mGKHF]|\x1b\([A-Z]")
+
+
+def _strip_ansi(text):
+    return _ANSI_RE.sub("", text)
+
 TAB_METADATA = {
     "id": "pet-bids",
     "label": "PET BIDS",
@@ -316,7 +322,7 @@ def _handle_run_dcm2bids_helper_pet(h, params):
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         try:
             for line in proc.stdout:
-                _emit_sse(h, {"line": line.rstrip("\n")})
+                _emit_sse(h, {"line": _strip_ansi(line.rstrip("\n"))})
             proc.wait(timeout=300)
             rc = proc.returncode
         except subprocess.TimeoutExpired:

@@ -6,13 +6,20 @@ Each routes.py must define:
   TAB_METADATA = {"id": str, "label": str, "order": int}
   register(get_routes: dict, post_routes: dict) -> None
 """
+import os
+import sys
+
+# ── Ensure .venv is used if it exists ─────────────────────────────────────────
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_venv_python = os.path.join(_script_dir, ".venv", "bin", "python3")
+if os.path.isfile(_venv_python) and sys.executable != _venv_python:
+    os.execv(_venv_python, [_venv_python] + sys.argv)
+
 import http.server
 import importlib.util
 import json
-import os
 import re
 import socket
-import sys
 import time
 import hmac
 import secrets

@@ -4,6 +4,7 @@ import os
 import re
 import sys
 import time
+import traceback
 from datetime import datetime
 from glob import glob
 from typing import Dict, Any
@@ -67,6 +68,7 @@ def bidsify(config: dict, conversion_table=None, conversion_file=None, force_sca
         'initial_status_counts': {},
         'processed_now': 0,
         'errors_now': 0,
+        'error_details': [],
         'final_status_counts': {},
         'report_updates': 0,
         'message': ''
@@ -179,6 +181,8 @@ def bidsify(config: dict, conversion_table=None, conversion_file=None, force_sca
     pcount = 0
     processed_now = 0
     errors_now = 0
+    recent_errors = []
+    max_recent_errors = 25
     for i, d in df[process_mask].iterrows():
         try:
             pcount += 1
@@ -318,13 +322,29 @@ def bidsify(config: dict, conversion_table=None, conversion_file=None, force_sca
 
         except Exception as e:
             print(f"Error processing file {d['raw_name']}: {e}")
+            error_detail = {
+                'raw_name': str(d.get('raw_name', '')),
+                'reason': str(e),
+                'exception_type': e.__class__.__name__,
+                'status': str(d.get('status', '')),
+                'task': str(d.get('task', '')),
+                'run': str(d.get('run', '')),
+                'acquisition': str(d.get('acquisition', '')),
+                'processing': str(d.get('processing', '')),
+                'description': str(d.get('description', '')),
+            }
             if verbose:
-                import traceback
                 print(f"  Exception details:")
                 print(f"    Task: {d['task']}, Run: {d['run']}, Acquisition: {d['acquisition']}")
                 print(f"    Processing: {d['processing']}, Description: {d['description']}")
                 print(f"  Full traceback:")
                 traceback.print_exc()
+                error_detail['traceback'] = traceback.format_exc()
+
+            recent_errors.append(error_detail)
+            if len(recent_errors) > max_recent_errors:
+                recent_errors = recent_errors[-max_recent_errors:]
+
             df.at[i, 'status'] = 'error'
             errors_now += 1
             _emit_progress({
@@ -333,7 +353,9 @@ def bidsify(config: dict, conversion_table=None, conversion_file=None, force_sca
                 'total': n_files_to_process,
                 'processed': processed_now,
                 'errors': errors_now,
-                'current_file': d.get('raw_name')
+                'current_file': d.get('raw_name'),
+                'last_error': error_detail,
+                'recent_errors': recent_errors,
             })
 
         df.at[i, 'time_stamp'] = ts
@@ -354,6 +376,7 @@ def bidsify(config: dict, conversion_table=None, conversion_file=None, force_sca
     final_status_counts = df['status'].fillna('error').value_counts().to_dict()
     summary['processed_now'] = processed_now
     summary['errors_now'] = errors_now
+    summary['error_details'] = recent_errors
     summary['final_status_counts'] = final_status_counts
     summary['report_updates'] = int(report_updates or 0)
     summary['message'] = 'BIDS conversion completed'

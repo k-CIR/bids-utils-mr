@@ -77,7 +77,9 @@ def _run_bidsify_job(job_id, config, verbose):
                 total=int(payload.get('total', 0) or 0),
                 processed=int(payload.get('processed', 0) or 0),
                 errors=int(payload.get('errors', 0) or 0),
-                current_file=payload.get('current_file')
+                current_file=payload.get('current_file'),
+                last_error=payload.get('last_error'),
+                recent_errors=payload.get('recent_errors', [])
             )
 
         summary = bidsify(
@@ -107,7 +109,25 @@ def _run_bidsify_job(job_id, config, verbose):
 
         _update_bids_job(job_id, state='completed', stage='done', done=True, summary=summary, message=message)
     except Exception as e:
-        _update_bids_job(job_id, state='failed', stage='failed', done=True, error=str(e), message='Conversion failed')
+        error_message = str(e)
+        fatal_error = {
+            'raw_name': '',
+            'reason': error_message,
+            'exception_type': e.__class__.__name__,
+        }
+        if verbose:
+            import traceback
+            fatal_error['traceback'] = traceback.format_exc()
+        _update_bids_job(
+            job_id,
+            state='failed',
+            stage='failed',
+            done=True,
+            error=error_message,
+            message='Conversion failed',
+            last_error=fatal_error,
+            recent_errors=[fatal_error],
+        )
 
 
 def _detect_raw_meg_dir():
@@ -395,6 +415,8 @@ def _handle_run_bidsify(h, body):
             'done': False,
             'summary': None,
             'error': None,
+            'last_error': None,
+            'recent_errors': [],
             'updated_at': time.time(),
         }
 
@@ -502,6 +524,24 @@ def _handle_get_static_js(h, params):
         h.send_error(500, f"Failed to read JavaScript file: {e}")
 
 
+def _handle_get_static_css(h, params):
+    """Serve the tab.css static file."""
+    css_path = os.path.join(_TAB_DIR, "tab.css")
+    if not os.path.isfile(css_path):
+        h.send_error(404, "CSS file not found")
+        return
+    try:
+        with open(css_path, encoding="utf-8") as fh:
+            body = fh.read().encode("utf-8")
+        h.send_response(200)
+        h.send_header("Content-Type", "text/css; charset=utf-8")
+        h.send_header("Content-Length", str(len(body)))
+        h.end_headers()
+        h.wfile.write(body)
+    except Exception as e:
+        h.send_error(500, f"Failed to read CSS file: {e}")
+
+
 def _handle_save_config(h, body):
     """Save configuration file to project path."""
     config_data = body.get("config", {})
@@ -543,6 +583,7 @@ def register(get_routes, post_routes):
     get_routes["/meg-get-conversion-table"] = _handle_get_conversion_table
     get_routes["/meg-bidsify-progress"] = _handle_bidsify_progress
     get_routes["/meg-tab.js"] = _handle_get_static_js
+    get_routes["/meg-tab.css"] = _handle_get_static_css
 
     post_routes["/meg-save-conversion-table"] = _handle_save_conversion_table
     post_routes["/meg-load-conversion-table"] = _handle_load_conversion_table

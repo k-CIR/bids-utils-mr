@@ -78,7 +78,8 @@
       sessions: new Set(),
       runs: new Set(),
       datatypes: new Set(),
-      rawNames: new Set()
+      rawNames: new Set(),
+      contextChecks: false
     },
 
     statusLegendMeta: {
@@ -149,9 +150,41 @@
           const nameDisplay = document.getElementById('megProjectNameDisplay');
           if (nameDisplay) nameDisplay.textContent = data.project_name;
         }
+
+        this.normalizeConfigPaths();
       } catch (e) {
         console.error('Failed to load project root:', e);
       }
+    },
+
+    toProjectRelativePath: function(pathValue, fallbackValue) {
+      const fallback = fallbackValue || '';
+      const raw = String(pathValue || '').trim();
+      if (!raw) return fallback;
+      const root = String(this.projectRoot || '').replace(/\/+$/, '');
+      if (!root) return raw;
+      if (raw === root) return fallback;
+      if (raw.startsWith(root + '/')) {
+        const rel = raw.slice(root.length + 1);
+        return rel || fallback;
+      }
+      return raw;
+    },
+
+    normalizeConversionFilePath: function(pathValue) {
+      const normalized = this.toProjectRelativePath(pathValue, 'utils/meg_bids_conversion.tsv');
+      const lower = String(normalized || '').toLowerCase();
+      if (lower === 'bids_conversion.tsv' || lower === 'logs/bids_conversion.tsv') {
+        return 'utils/meg_bids_conversion.tsv';
+      }
+      return normalized;
+    },
+
+    normalizeConfigPaths: function() {
+      this.config.raw_dir = this.toProjectRelativePath(this.config.raw_dir, 'raw/natmeg');
+      this.config.bids_dir = this.toProjectRelativePath(this.config.bids_dir, 'BIDS');
+      this.config.conversion_file = this.normalizeConversionFilePath(this.config.conversion_file);
+      this.config.config_file = this.toProjectRelativePath(this.config.config_file, 'meg_bids_config.json');
     },
 
     // Step navigation
@@ -175,8 +208,10 @@
         try {
           const savedConfig = JSON.parse(saved);
           this.config = { ...this.config, ...savedConfig };
+          this.normalizeConfigPaths();
           this.updateFormFromConfig();
           this.updateJsonDisplay();
+          this.validateAllPaths();
           this.setAutoSaveStatus('saved');
         } catch (e) {
           console.error('Failed to load from localStorage:', e);
@@ -239,12 +274,23 @@
 
     // Sync form to JSON (live)
     syncFormToJson: function() {
-      this.config.raw_dir = document.getElementById('megCfgRawDir')?.value || 'raw/natmeg';
-      this.config.bids_dir = document.getElementById('megCfgBidsDir')?.value || 'BIDS';
-      this.config.conversion_file = document.getElementById('megCfgConversionFile')?.value || 'utils/meg_bids_conversion.tsv';
-      this.config.config_file = document.getElementById('megCfgConfigFile')?.value || 'meg_bids_config.json';
+      this.config.raw_dir = this.toProjectRelativePath(document.getElementById('megCfgRawDir')?.value, 'raw/natmeg');
+      this.config.bids_dir = this.toProjectRelativePath(document.getElementById('megCfgBidsDir')?.value, 'BIDS');
+      this.config.conversion_file = this.toProjectRelativePath(document.getElementById('megCfgConversionFile')?.value, 'utils/meg_bids_conversion.tsv');
+      this.config.config_file = this.toProjectRelativePath(document.getElementById('megCfgConfigFile')?.value, 'meg_bids_config.json');
       this.config.overwrite = document.getElementById('megCfgOverwrite')?.checked || false;
       this.config.tasks = this.config.tasks || [];
+
+      const rawDirEl = document.getElementById('megCfgRawDir');
+      if (rawDirEl) rawDirEl.value = this.config.raw_dir;
+      const bidsDirEl = document.getElementById('megCfgBidsDir');
+      if (bidsDirEl) bidsDirEl.value = this.config.bids_dir;
+      const convEl = document.getElementById('megCfgConversionFile');
+      if (convEl) convEl.value = this.config.conversion_file;
+      const cfgEl = document.getElementById('megCfgConfigFile');
+      if (cfgEl) cfgEl.value = this.config.config_file;
+      const tablePathEl = document.getElementById('megTablePath');
+      if (tablePathEl) tablePathEl.value = this.config.conversion_file;
 
       this.updateJsonDisplay();
       this.debouncedValidatePaths();
@@ -263,12 +309,13 @@
         this.config = { ...this.config, ...parsed };
         this.config.project_name = savedProjectName;
         this.config.tasks = Array.isArray(this.config.tasks) ? this.config.tasks : [];
+        this.normalizeConfigPaths();
 
         // Update form fields
-        document.getElementById('megCfgRawDir').value = parsed.raw_dir || '';
-        document.getElementById('megCfgBidsDir').value = parsed.bids_dir || '';
-        document.getElementById('megCfgConversionFile').value = parsed.conversion_file || '';
-        document.getElementById('megCfgConfigFile').value = parsed.config_file || 'meg_bids_config.json';
+        document.getElementById('megCfgRawDir').value = this.config.raw_dir || '';
+        document.getElementById('megCfgBidsDir').value = this.config.bids_dir || '';
+        document.getElementById('megCfgConversionFile').value = this.config.conversion_file || '';
+        document.getElementById('megCfgConfigFile').value = this.config.config_file || 'meg_bids_config.json';
         document.getElementById('megCfgOverwrite').checked = parsed.overwrite || false;
         const tablePath = document.getElementById('megTablePath');
         if (tablePath) tablePath.value = this.config.conversion_file || '';
@@ -369,7 +416,10 @@
       // Mark all as checking
       paths.forEach(p => {
         const el = document.getElementById('val-' + p.id);
-        if (el) el.className = 'path-validation checking';
+        if (el) {
+          el.className = 'path-validation checking';
+          el.textContent = '⏳';
+        }
       });
 
       try {
@@ -384,11 +434,20 @@
           const el = document.getElementById('val-' + id);
           if (el) {
             el.className = 'path-validation ' + (result.exists ? 'valid' : 'invalid');
+            el.textContent = result.exists ? '✓' : '✗';
             el.title = result.resolved || '';
           }
         });
       } catch (e) {
         console.error('Validation failed:', e);
+        paths.forEach(p => {
+          const el = document.getElementById('val-' + p.id);
+          if (el) {
+            el.className = 'path-validation invalid';
+            el.textContent = '✗';
+            el.title = 'Path validation failed';
+          }
+        });
       }
     },
 
@@ -465,11 +524,11 @@
         const savedProjectName = this.config.project_name;
         this.config = {
           project_name: savedProjectName,
-          raw_dir: serverConfig.Raw || 'raw/natmeg',
-          bids_dir: serverConfig.BIDS || 'BIDS',
+          raw_dir: this.toProjectRelativePath(serverConfig.Raw, 'raw/natmeg'),
+          bids_dir: this.toProjectRelativePath(serverConfig.BIDS, 'BIDS'),
           tasks: serverConfig.Tasks || [],
-          conversion_file: serverConfig.Conversion_file || 'utils/meg_bids_conversion.tsv',
-          config_file: serverConfig.config_file || 'meg_bids_config.json',
+          conversion_file: this.toProjectRelativePath(serverConfig.Conversion_file, 'utils/meg_bids_conversion.tsv'),
+          config_file: this.toProjectRelativePath(serverConfig.config_file, 'meg_bids_config.json'),
           overwrite: serverConfig.overwrite || false
         };
 
@@ -550,6 +609,19 @@
           clearBtn.addEventListener('click', () => this.clearFilters());
         }
 
+        const contextChecksEl = document.getElementById('megContextChecksChk');
+        if (contextChecksEl) {
+          contextChecksEl.addEventListener('change', () => {
+            if (contextChecksEl.disabled) {
+              contextChecksEl.checked = false;
+              megBids.filters.contextChecks = false;
+            } else {
+              megBids.filters.contextChecks = !!contextChecksEl.checked;
+            }
+            this.applyFilters();
+          });
+        }
+
         // Batch apply
         const batchBtn = document.getElementById('megBatchApplyBtn');
         if (batchBtn) {
@@ -577,7 +649,8 @@
         const tablePathInput = document.getElementById('megTablePath');
         if (tablePathInput) {
           tablePathInput.addEventListener('input', () => {
-            megBids.config.conversion_file = tablePathInput.value || 'utils/meg_bids_conversion.tsv';
+            megBids.config.conversion_file = megBids.toProjectRelativePath(tablePathInput.value, 'utils/meg_bids_conversion.tsv');
+            tablePathInput.value = megBids.config.conversion_file;
             const cfgConv = document.getElementById('megCfgConversionFile');
             if (cfgConv) cfgConv.value = megBids.config.conversion_file;
             megBids.updateJsonDisplay();
@@ -755,6 +828,26 @@
         });
       },
 
+      getContextKey: function(row) {
+        return `${row?.participant_to || ''}\u0000${row?.session_to || ''}`;
+      },
+
+      updateContextChecksAvailability: function() {
+        const contextChecksEl = document.getElementById('megContextChecksChk');
+        if (!contextChecksEl) return;
+
+        const hasCheckRows = megBids.tableData.some(row => String(row?.status || '').toLowerCase() === 'check');
+        contextChecksEl.disabled = !hasCheckRows;
+
+        if (!hasCheckRows) {
+          megBids.filters.contextChecks = false;
+        }
+
+        contextChecksEl.checked = !!megBids.filters.contextChecks;
+        const wrapper = contextChecksEl.closest('.context-checks-label');
+        if (wrapper) wrapper.classList.toggle('disabled', contextChecksEl.disabled);
+      },
+
       setupVirtualScroll: function() {
         const container = document.getElementById('megTableContainer');
         if (!container) return;
@@ -819,13 +912,13 @@
           megBids.tableData = data.table || [];
           megBids.originalData = JSON.parse(JSON.stringify(data.table || []));
           megBids.tableSearchIndex = megBids.tableData.map(row => this.buildRowSearchText(row));
-          megBids.tableFile = data.file;
+          megBids.tableFile = megBids.toProjectRelativePath(data.file, megBids.config.conversion_file);
           if (data.file) {
-            megBids.config.conversion_file = data.file;
+            megBids.config.conversion_file = megBids.toProjectRelativePath(data.file, 'utils/meg_bids_conversion.tsv');
             const pathInput = document.getElementById('megTablePath');
-            if (pathInput) pathInput.value = data.file;
+            if (pathInput) pathInput.value = megBids.config.conversion_file;
             const cfgConv = document.getElementById('megCfgConversionFile');
-            if (cfgConv) cfgConv.value = data.file;
+            if (cfgConv) cfgConv.value = megBids.config.conversion_file;
             megBids.updateJsonDisplay();
           }
           megBids.modifiedRows.clear();
@@ -910,6 +1003,7 @@
         this.renderHeaderFilterOptions('runs');
         this.renderHeaderFilterOptions('datatypes');
         this.renderHeaderFilterOptions('rawNames');
+        this.updateContextChecksAvailability();
         this.updateFilterButtonStates();
       },
 
@@ -966,6 +1060,16 @@
         const searchEl = document.getElementById('megSearchInput');
 
         const search = (searchEl?.value || '').toLowerCase().trim();
+        this.updateContextChecksAvailability();
+
+        const contextChecksSet = new Set();
+        if (megBids.filters.contextChecks) {
+          megBids.tableData.forEach((row) => {
+            if (String(row?.status || '').toLowerCase() === 'check') {
+              contextChecksSet.add(this.getContextKey(row));
+            }
+          });
+        }
 
         // Build visible row indices
         megBids.modal.visibleRowIndices = [];
@@ -975,6 +1079,12 @@
           if (search) {
             const rowText = megBids.tableSearchIndex[idx] || '';
             if (rowText.indexOf(search) === -1) return;
+          }
+
+          if (megBids.filters.contextChecks) {
+            const rowStatus = String(row?.status || '').toLowerCase();
+            if (rowStatus === 'skip') return;
+            if (!contextChecksSet.has(this.getContextKey(row))) return;
           }
 
           // Subject filter
@@ -1149,6 +1259,10 @@
         megBids.filters.runs.clear();
         megBids.filters.datatypes.clear();
         megBids.filters.rawNames.clear();
+        megBids.filters.contextChecks = false;
+
+        const contextChecksEl = document.getElementById('megContextChecksChk');
+        if (contextChecksEl) contextChecksEl.checked = false;
 
         const searchEl = document.getElementById('megSearchInput');
         if (searchEl) searchEl.value = '';
@@ -1160,6 +1274,7 @@
         });
 
         this.updateFilterButtonStates();
+        this.updateContextChecksAvailability();
         this.applyFilters();
       },
 
@@ -1299,6 +1414,7 @@
         }
 
         // Populate form fields
+        const parsedBids = this.parseBidsName(row.bids_name || '');
         this.setModalValue('megEditSubject', row.participant_to);
         this.setModalValue('megEditSession', row.session_to);
         this.setModalValue('megEditTask', row.task);
@@ -1306,12 +1422,12 @@
         this.setModalValue('megEditRun', row.run);
         this.setModalValue('megEditProcessing', row.processing);
         this.setModalValue('megEditSplit', row.split);
-        this.setModalValue('megEditRecording', row.recording);
-        this.setModalValue('megEditSpace', row.space);
+        this.setModalValue('megEditRecording', row.recording || parsedBids.recording);
+        this.setModalValue('megEditSpace', row.space || parsedBids.space);
         this.setModalValue('megEditDescription', row.description);
-        this.setModalValue('megEditTrackingSystem', row.tracking_system);
-        this.setModalValue('megEditSuffix', row.suffix);
-        this.setModalValue('megEditExtension', row.extension);
+        this.setModalValue('megEditTrackingSystem', row.tracking_system || parsedBids.tracking_system);
+        this.setModalValue('megEditSuffix', row.suffix || parsedBids.suffix);
+        this.setModalValue('megEditExtension', row.extension || parsedBids.extension);
         this.setModalValue('megEditDatatype', row.datatype);
         this.setModalValue('megEditStatus', row.status);
 
@@ -1349,8 +1465,37 @@
         if (el) el.value = value || '';
       },
 
-      // Update live BIDS filename preview
-      updateLivePreview: function() {
+      parseBidsName: function(bidsName) {
+        const parsed = {
+          suffix: '',
+          extension: '',
+          recording: '',
+          space: '',
+          tracking_system: ''
+        };
+        const name = String(bidsName || '').trim();
+        if (!name) return parsed;
+
+        const extMatch = name.match(/(\.[A-Za-z0-9]+)$/);
+        if (extMatch) parsed.extension = extMatch[1];
+
+        const basename = parsed.extension ? name.slice(0, -parsed.extension.length) : name;
+        const parts = basename.split('_').filter(Boolean);
+        if (parts.length > 0) {
+          const suffixCandidate = parts[parts.length - 1];
+          if (suffixCandidate && !suffixCandidate.includes('-')) parsed.suffix = suffixCandidate;
+        }
+
+        parts.forEach((part) => {
+          if (part.startsWith('recording-')) parsed.recording = part.slice('recording-'.length);
+          else if (part.startsWith('space-')) parsed.space = part.slice('space-'.length);
+          else if (part.startsWith('tracksys-')) parsed.tracking_system = part.slice('tracksys-'.length);
+        });
+
+        return parsed;
+      },
+
+      getModalFilename: function() {
         const parts = [];
 
         const subject = document.getElementById('megEditSubject')?.value;
@@ -1363,6 +1508,7 @@
         const recording = document.getElementById('megEditRecording')?.value;
         const space = document.getElementById('megEditSpace')?.value;
         const description = document.getElementById('megEditDescription')?.value;
+        const trackingSystem = document.getElementById('megEditTrackingSystem')?.value;
         const suffix = document.getElementById('megEditSuffix')?.value;
         const extension = document.getElementById('megEditExtension')?.value;
 
@@ -1376,13 +1522,31 @@
         if (recording) parts.push(`recording-${recording}`);
         if (space) parts.push(`space-${space}`);
         if (description) parts.push(`desc-${description}`);
+        if (trackingSystem) parts.push(`tracksys-${trackingSystem}`);
         if (suffix) parts.push(suffix);
 
         let filename = parts.join('_');
         if (extension) filename += extension;
+        return filename;
+      },
+
+      // Update live BIDS filename preview
+      updateLivePreview: function() {
+        const filename = this.getModalFilename();
 
         const previewEl = document.getElementById('megFilenamePreview');
         if (previewEl) previewEl.textContent = filename || 'No filename generated yet';
+
+        const convertedEl = document.getElementById('megEditConverted');
+        if (convertedEl) {
+          const dataIdx = megBids.modal.currentRowIndex;
+          const row = dataIdx === null ? null : megBids.tableData[dataIdx];
+          const bidsPath = row?.bids_path || '';
+          const status = String(document.getElementById('megEditStatus')?.value || row?.status || '').toLowerCase();
+          const convertedPath = (bidsPath && filename) ? `${bidsPath}/${filename}` : '';
+          convertedEl.textContent = (status === 'processed' && convertedPath) ? convertedPath : 'Not converted yet';
+          convertedEl.style.color = (status === 'processed' && convertedPath) ? '#8cb4ff' : '#888';
+        }
       },
 
       // Toggle advanced section
@@ -1440,6 +1604,9 @@
         row.datatype = document.getElementById('megEditDatatype')?.value || '';
         row.status = document.getElementById('megEditStatus')?.value || '';
 
+        const rebuiltName = this.getModalFilename();
+        if (rebuiltName) row.bids_name = rebuiltName;
+
         megBids.tableSearchIndex[dataIdx] = this.buildRowSearchText(row);
 
         // Mark as modified
@@ -1448,8 +1615,9 @@
         // Enable save button
         const saveBtn = document.getElementById('megSaveTableBtn');
         if (saveBtn) saveBtn.disabled = false;
-        this.renderVisibleRows(true);
         this.updateLivePreview();
+        this.populateFilters();
+        this.applyFilters();
       },
 
       // Close modal
@@ -1511,7 +1679,8 @@
         const saveBtn = document.getElementById('megSaveTableBtn');
         if (saveBtn) saveBtn.disabled = false;
 
-        this.renderVisibleRows(true);
+        this.populateFilters();
+        this.applyFilters();
       },
 
       // Batch rename task for selected rows
@@ -1567,12 +1736,12 @@
           } else {
             megBids.modifiedRows.clear();
             if (data.path) {
-              megBids.tableFile = data.path;
-              megBids.config.conversion_file = data.path;
+              megBids.tableFile = megBids.toProjectRelativePath(data.path, megBids.config.conversion_file);
+              megBids.config.conversion_file = megBids.toProjectRelativePath(data.path, 'utils/meg_bids_conversion.tsv');
               const pathInput = document.getElementById('megTablePath');
-              if (pathInput) pathInput.value = data.path;
+              if (pathInput) pathInput.value = megBids.config.conversion_file;
               const cfgConv = document.getElementById('megCfgConversionFile');
-              if (cfgConv) cfgConv.value = data.path;
+              if (cfgConv) cfgConv.value = megBids.config.conversion_file;
               megBids.updateJsonDisplay();
             }
             megBids.setStatus('megTableStatus', `Table saved: ${data.rows} rows`);
@@ -1603,6 +1772,7 @@
 
         let progressTimer = null;
         let progressValue = 0;
+        let displayedVerboseErrors = 0;
 
         const setProgress = (value, text) => {
           const clamped = Math.max(0, Math.min(100, value));
@@ -1634,6 +1804,27 @@
           return keys.map((k) => `${k}=${counts[k]}`).join(', ');
         };
 
+        const appendVerboseErrors = (job) => {
+          if (!verbose || !output || !job || !Array.isArray(job.recent_errors)) return;
+          const totalErrorItems = job.recent_errors.length;
+          if (totalErrorItems <= displayedVerboseErrors) return;
+
+          const newItems = job.recent_errors.slice(displayedVerboseErrors);
+          newItems.forEach((item) => {
+            const fileLabel = item?.raw_name || item?.current_file || 'unknown file';
+            const reason = item?.reason || item?.error || 'Unknown error';
+            const exceptionType = item?.exception_type ? ` (${item.exception_type})` : '';
+            output.textContent += `\nError reason: ${fileLabel}${exceptionType} -> ${reason}`;
+
+            const trace = String(item?.traceback || '');
+            if (trace.trim()) {
+              output.textContent += `\nTraceback:\n${trace}`;
+            }
+          });
+
+          displayedVerboseErrors = totalErrorItems;
+        };
+
         const refreshConversionTable = async () => {
           try {
             const serverConfig = {
@@ -1657,8 +1848,13 @@
             megBids.originalData = JSON.parse(JSON.stringify(tableData.table || []));
             megBids.tableSearchIndex = megBids.tableData.map(row => this.buildRowSearchText(row));
             if (tableData.file) {
-              megBids.tableFile = tableData.file;
-              megBids.config.conversion_file = tableData.file;
+              megBids.tableFile = megBids.toProjectRelativePath(tableData.file, megBids.config.conversion_file);
+              megBids.config.conversion_file = megBids.toProjectRelativePath(tableData.file, 'utils/meg_bids_conversion.tsv');
+              const pathInput = document.getElementById('megTablePath');
+              if (pathInput) pathInput.value = megBids.config.conversion_file;
+              const cfgConv = document.getElementById('megCfgConversionFile');
+              if (cfgConv) cfgConv.value = megBids.config.conversion_file;
+              megBids.updateJsonDisplay();
             }
             this.populateFilters();
             this.applyFilters();
@@ -1720,6 +1916,7 @@
 
             stopProgressAnimation();
             const job = progressData.job;
+            appendVerboseErrors(job);
             const total = Math.max(0, Number(job.total || 0));
             const processed = Math.max(0, Number(job.processed || 0));
             const errors = Math.max(0, Number(job.errors || 0));

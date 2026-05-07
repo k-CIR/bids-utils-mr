@@ -26,6 +26,11 @@ CONVERSION_COLUMNS = [
     'acquisition',
     'processing',
     'description',
+    'suffix',
+    'extension',
+    'recording',
+    'space',
+    'tracking_system',
     'raw_path',
     'raw_name',
     'bids_path',
@@ -44,6 +49,8 @@ def _normalize_table(df: pd.DataFrame) -> pd.DataFrame:
     for col in CONVERSION_COLUMNS:
         if col not in df.columns:
             df[col] = None
+
+    df = df[CONVERSION_COLUMNS].where(pd.notna(df[CONVERSION_COLUMNS]), None)
 
     # Fill any empty/NaN status values with 'error'
     if 'status' in df.columns:
@@ -88,8 +95,12 @@ def _file_signature(full_path: str) -> tuple:
 
 
 def _bids_output_exists(bids_path: str, bids_name: str) -> bool:
+    if pd.isna(bids_path) or pd.isna(bids_name):
+        return False
     if not bids_path or not bids_name:
         return False
+    bids_path = str(bids_path)
+    bids_name = str(bids_name)
     exact = join(bids_path, bids_name)
     if os.path.exists(exact):
         return True
@@ -158,6 +169,8 @@ def _refresh_processed_status(table: pd.DataFrame) -> pd.DataFrame:
     for i, row in table.iterrows():
         raw_path = row.get('raw_path')
         raw_name = row.get('raw_name')
+        raw_path = None if pd.isna(raw_path) else str(raw_path) if raw_path is not None else None
+        raw_name = None if pd.isna(raw_name) else str(raw_name) if raw_name is not None else None
         if raw_path and raw_name and not os.path.exists(join(raw_path, raw_name)):
             table = _update_status_with_history(table, i, 'missing')
             continue
@@ -165,6 +178,8 @@ def _refresh_processed_status(table: pd.DataFrame) -> pd.DataFrame:
             continue
         bids_path = row.get('bids_path')
         bids_name = row.get('bids_name')
+        bids_path = None if pd.isna(bids_path) else str(bids_path) if bids_path is not None else None
+        bids_name = None if pd.isna(bids_name) else str(bids_name) if bids_name is not None else None
         if _bids_output_exists(bids_path, bids_name):
             table = _update_status_with_history(table, i, 'processed')
         elif row.get('status') == 'processed':
@@ -331,16 +346,20 @@ def load_conversion_table(config: dict, refresh_status: bool = False):
     """
     overwrite = config.get('Overwrite_conversion', False)
     logPath = setLogPath(config)
-    conversion_file = config.get('Conversion_file', 'bids_conversion.tsv')
+    conversion_file = config.get('Conversion_file', 'utils/meg_bids_conversion.tsv')
     if conversion_file == '':
-        conversion_file = 'bids_conversion.tsv'
+        conversion_file = 'utils/meg_bids_conversion.tsv'
 
     if not os.path.exists(logPath):
         os.makedirs(logPath, exist_ok=True)
         print(f"Created new log path: {logPath}")
 
     if not os.path.isabs(conversion_file):
-        conversion_file = os.path.join(logPath, conversion_file)
+        root_path = str(config.get('Root', '') or '').strip()
+        if root_path:
+            conversion_file = os.path.join(root_path, conversion_file.lstrip('/'))
+        else:
+            conversion_file = os.path.join(logPath, conversion_file)
 
     if not os.path.exists(dirname(conversion_file)):
         os.makedirs(dirname(conversion_file), exist_ok=True)
@@ -375,30 +394,18 @@ def load_conversion_table(config: dict, refresh_status: bool = False):
         print(f"New conversion table generated and saved to {os.path.basename(conversion_file)}")
         while not os.path.exists(conversion_file):
             time.sleep(0.5)
-
-        conversion_files = sorted(
-            glob(os.path.join(logPath, '*.tsv')),
-            key=os.path.getctime
-        )
-        print(f"Found conversion files: {conversion_files}")
-        if conversion_files:
-            latest_conversion_file = conversion_files[-1]
-            print(f"Loading the most recent conversion table: {os.path.basename(latest_conversion_file)}")
-            try:
-                if os.path.getsize(latest_conversion_file) > 0:
-                    conversion_table = pd.read_csv(latest_conversion_file, sep='\t', dtype=str)
-                    conversion_table = _normalize_table(conversion_table)
-                    if refresh_status:
-                        conversion_table = _refresh_processed_status(conversion_table)
-                    return conversion_table, latest_conversion_file
-                else:
-                    print("Warning: Generated conversion table is empty. No files found to convert.")
-                    return pd.DataFrame(columns=CONVERSION_COLUMNS), latest_conversion_file
-            except (pd.errors.EmptyDataError, ValueError) as e:
-                print(f"Warning: Generated conversion table is corrupted or empty: {e}")
-                return pd.DataFrame(columns=CONVERSION_COLUMNS), latest_conversion_file
-        else:
-            raise FileNotFoundError("No conversion files found after generation")
+        try:
+            if os.path.getsize(conversion_file) > 0:
+                conversion_table = pd.read_csv(conversion_file, sep='\t', dtype=str)
+                conversion_table = _normalize_table(conversion_table)
+                if refresh_status:
+                    conversion_table = _refresh_processed_status(conversion_table)
+                return conversion_table, conversion_file
+            print("Warning: Generated conversion table is empty. No files found to convert.")
+            return pd.DataFrame(columns=CONVERSION_COLUMNS), conversion_file
+        except (pd.errors.EmptyDataError, ValueError) as e:
+            print(f"Warning: Generated conversion table is corrupted or empty: {e}")
+            return pd.DataFrame(columns=CONVERSION_COLUMNS), conversion_file
 
 
 def update_conversion_table(config, conversion_file=None, force_scan: bool = False):

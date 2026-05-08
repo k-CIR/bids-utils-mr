@@ -120,9 +120,13 @@
     // Initialize module
     init: async function() {
       await this.loadProjectRoot();
-      this.loadFromLocalStorage();
+      const loadedDefaultConfig = await this.tryAutoLoadDefaultConfig();
+      if (!loadedDefaultConfig) {
+        this.loadFromLocalStorage();
+      }
       this.Editor.init();
       this.switchStep(1);
+      await this.Editor.tryAutoLoadConversionTable();
     },
 
     // Load project root from server
@@ -222,6 +226,60 @@
         // No saved config - show defaults in JSON viewer
         this.setDefaultConfig();
       }
+    },
+
+    tryAutoLoadDefaultConfig: async function() {
+      try {
+        const res = await fetch(Utils.apiPath('/meg-get-config'));
+        const data = await res.json();
+        if (!data || !data.config_exists) return false;
+
+        return await this.loadConfigAtPath(this.config.config_file || 'meg_bids_config.json', { alertOnSuccess: false });
+      } catch (e) {
+        console.error('Failed to autoload default config:', e);
+        return false;
+      }
+    },
+
+    loadConfigAtPath: async function(path, options) {
+      const opts = options || {};
+      const configPath = String(path || '').trim();
+      if (!configPath) return false;
+
+      const res = await fetch(Utils.apiPath('/meg-load-config?path=' + encodeURIComponent(configPath)));
+      const data = await res.json();
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      const serverConfig = data.config;
+      const savedProjectName = this.config.project_name;
+      this.config = {
+        project_name: savedProjectName,
+        raw_dir: this.toProjectRelativePath(serverConfig.Raw, 'raw/natmeg'),
+        bids_dir: this.toProjectRelativePath(serverConfig.BIDS, 'BIDS'),
+        tasks: serverConfig.Tasks || [],
+        conversion_file: this.toProjectRelativePath(serverConfig.Conversion_file, 'utils/meg_bids_conversion.tsv'),
+        config_file: this.toProjectRelativePath(serverConfig.config_file, 'meg_bids_config.json'),
+        overwrite: serverConfig.overwrite || false
+      };
+
+      document.getElementById('megCfgRawDir').value = this.config.raw_dir;
+      document.getElementById('megCfgBidsDir').value = this.config.bids_dir;
+      document.getElementById('megCfgConversionFile').value = this.config.conversion_file;
+      document.getElementById('megCfgConfigFile').value = this.config.config_file;
+      document.getElementById('megCfgOverwrite').checked = this.config.overwrite;
+
+      this.renderTasks();
+      this.updateJsonDisplay();
+      this.validateAllPaths();
+      this.saveToLocalStorage();
+
+      if (opts.alertOnSuccess !== false) {
+        alert('Config loaded from: ' + configPath);
+      }
+      return true;
     },
 
     // Set default configuration
@@ -511,39 +569,8 @@
       if (!path) return;
 
       try {
-        const res = await fetch(Utils.apiPath('/meg-load-config?path=' + encodeURIComponent(path)));
-        const data = await res.json();
-
-        if (data.error) {
-          alert('Error: ' + data.error);
-          return;
-        }
-
-        // Convert from server config format to minimal format
-        const serverConfig = data.config;
-        const savedProjectName = this.config.project_name;
-        this.config = {
-          project_name: savedProjectName,
-          raw_dir: this.toProjectRelativePath(serverConfig.Raw, 'raw/natmeg'),
-          bids_dir: this.toProjectRelativePath(serverConfig.BIDS, 'BIDS'),
-          tasks: serverConfig.Tasks || [],
-          conversion_file: this.toProjectRelativePath(serverConfig.Conversion_file, 'utils/meg_bids_conversion.tsv'),
-          config_file: this.toProjectRelativePath(serverConfig.config_file, 'meg_bids_config.json'),
-          overwrite: serverConfig.overwrite || false
-        };
-
-        // Update form
-        document.getElementById('megCfgRawDir').value = this.config.raw_dir;
-        document.getElementById('megCfgBidsDir').value = this.config.bids_dir;
-        document.getElementById('megCfgConversionFile').value = this.config.conversion_file;
-        document.getElementById('megCfgConfigFile').value = this.config.config_file;
-        document.getElementById('megCfgOverwrite').checked = this.config.overwrite;
-
-        this.renderTasks();
-        this.updateJsonDisplay();
-        this.validateAllPaths();
-        this.saveToLocalStorage();
-        alert('Config loaded from: ' + path);
+        await this.loadConfigAtPath(path);
+        await this.Editor.tryAutoLoadConversionTable();
       } catch (e) {
         alert('Failed to load config: ' + e.message);
       }
@@ -670,8 +697,16 @@
                 megBids.selectedRows.delete(dataIdx);
               }
             });
+            // Update only the currently rendered DOM rows instead of re-rendering
+            const tbody = document.getElementById('megTableBody');
+            if (tbody) {
+              tbody.querySelectorAll('input[data-select-row]').forEach(cb => {
+                cb.checked = shouldSelect;
+                const tr = cb.closest('tr');
+                if (tr) tr.classList.toggle('row-selected', shouldSelect);
+              });
+            }
             this.updateBatchActions();
-            this.renderVisibleRows();
           });
         }
 
@@ -940,6 +975,70 @@
           this.renderStatusLegend();
         } finally {
           if (btn) btn.disabled = false;
+        }
+      },
+
+      // Autoload existing conversion table for current config if the file already exists.
+      tryAutoLoadConversionTable: async function() {
+        if (!megBids.config || !megBids.config.conversion_file) return;
+
+        const conversionPath = megBids.toProjectRelativePath(megBids.config.conversion_file, 'utils/meg_bids_conversion.tsv');
+        if (!conversionPath) return;
+
+        try {
+          const checkRes = await fetch(Utils.apiPath('/meg-validate-paths'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paths: [{ id: 'conv', path: conversionPath }] })
+          });
+          const checkData = await checkRes.json();
+          const conv = checkData?.results?.conv;
+          if (!conv || !conv.exists || !conv.is_file) {
+            return;
+          }
+
+          const serverConfig = {
+            project_name: megBids.config.project_name,
+            raw_dir: megBids.config.raw_dir,
+            bids_dir: megBids.config.bids_dir,
+            tasks: megBids.config.tasks,
+            conversion_file: conversionPath,
+            config_file: megBids.config.config_file,
+            overwrite: megBids.config.overwrite
+          };
+
+          const tableRes = await fetch(Utils.apiPath('/meg-load-conversion-table'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ config: serverConfig })
+          });
+          const tableData = await tableRes.json();
+          if (tableData.error) return;
+
+          megBids.tableData = tableData.table || [];
+          megBids.originalData = JSON.parse(JSON.stringify(tableData.table || []));
+          megBids.tableSearchIndex = megBids.tableData.map(row => this.buildRowSearchText(row));
+          megBids.tableFile = megBids.toProjectRelativePath(tableData.file, conversionPath);
+          if (tableData.file) {
+            megBids.config.conversion_file = megBids.toProjectRelativePath(tableData.file, 'utils/meg_bids_conversion.tsv');
+          }
+
+          const pathInput = document.getElementById('megTablePath');
+          if (pathInput) pathInput.value = megBids.config.conversion_file;
+          const cfgConv = document.getElementById('megCfgConversionFile');
+          if (cfgConv) cfgConv.value = megBids.config.conversion_file;
+          const saveBtn = document.getElementById('megSaveTableBtn');
+          if (saveBtn) saveBtn.disabled = true;
+
+          megBids.selectedRows.clear();
+          megBids.modifiedRows.clear();
+          this.populateFilters();
+          this.applyFilters();
+          megBids.updateJsonDisplay();
+          megBids.setStatus('megTableStatus', `Loaded existing conversion table (${megBids.tableData.length} rows).`);
+          this.renderStatusLegend();
+        } catch (_) {
+          // Silent by design: startup should not fail if table autoload fails.
         }
       },
 

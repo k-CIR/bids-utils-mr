@@ -598,6 +598,9 @@ def _handle_run_dcm2bids(h, body):
         sessions = [s for s in all_sessions if s["label"] in selected_set]
     else:
         sessions = all_sessions
+    
+    # Enrich sessions with actual DICOM metadata for config matching
+    sessions = bids_runner.enrich_sessions_with_metadata(sessions)
 
     recode = body.get("recode") or {}
     if isinstance(recode, dict) and recode:
@@ -655,6 +658,20 @@ def _handle_save_bids_config(h, body):
     if not isinstance(body, dict) or "descriptions" not in body:
         h.send_error(400, "Invalid config: missing 'descriptions'")
         return
+
+    descriptions = body.get("descriptions")
+    if isinstance(descriptions, list):
+        for desc in descriptions:
+            if not isinstance(desc, dict):
+                continue
+            custom_entities = desc.get("custom_entities")
+            if isinstance(custom_entities, list):
+                desc["custom_entities"] = [
+                    item for item in custom_entities
+                    if not str(item or "").strip().casefold().startswith("desc-")
+                ]
+            desc.pop("desc", None)
+
     try:
         config_builder.save_config(body)
         h._send_json({"ok": True})
@@ -826,15 +843,11 @@ def _handle_get_csv(h, params):
         })
         return
 
+    # For source CSVs, always treat the first row as the header row and the
+    # remaining rows as data. The client is responsible for choosing which
+    # columns to display from those headers.
     headers = rows[0]
     data_rows = rows[1:]
-
-    selected_columns_raw = params.get("columns", [""])[0].strip()
-    if selected_columns_raw:
-        selected_columns = [c.strip() for c in selected_columns_raw.split(",") if c.strip()]
-        selected_indices = [i for i, header in enumerate(headers) if header in selected_columns]
-        headers = [headers[i] for i in selected_indices]
-        data_rows = [[row[i] if i < len(row) else "" for i in selected_indices] for row in data_rows]
 
     max_rows = 1000
     truncated = len(data_rows) > max_rows
@@ -890,8 +903,27 @@ def _handle_load_target_file(h, params):
         })
         return
 
-    headers = rows[0]
-    data_rows = rows[1:]
+    def _looks_like_header(row):
+        if not row:
+            return False
+        tokens = {str(c).strip().lower() for c in row}
+        common = {"subject", "sub", "participant_id", "id", "session", "ses", "visit", "bids", "petprep"}
+        return any(t in common for t in tokens)
+
+    if _looks_like_header(rows[0]):
+        headers = rows[0]
+        data_rows = rows[1:]
+    else:
+        max_cols = max((len(r) for r in rows), default=0)
+        synthesized = []
+        if max_cols >= 1:
+            synthesized.append("subject")
+        if max_cols >= 2:
+            synthesized.append("session")
+        for i in range(3, max_cols + 1):
+            synthesized.append(f"col{i}")
+        headers = synthesized
+        data_rows = rows
 
     h._send_json({
         "path": os.path.relpath(full_path, PROJECT_ROOT),
@@ -1095,10 +1127,21 @@ def _handle_merge_completed_sessions(h, body):
     target_idx = {header: i for i, header in enumerate(target_headers)}
     completed_idx = {header: i for i, header in enumerate(completed_headers)}
 
+    # Support case-insensitive detection of key columns (e.g. "Subject" vs "subject")
+    target_idx_lc = {header.lower(): i for i, header in enumerate(target_headers)}
+    completed_idx_lc = {header.lower(): i for i, header in enumerate(completed_headers)}
+
     preferred_key_columns = ["subject", "session"]
-    key_columns = [c for c in preferred_key_columns if c in target_idx and c in completed_idx]
+    key_columns = []
+    for k in preferred_key_columns:
+        if k in target_idx_lc and k in completed_idx_lc:
+            # use the actual header name from target_headers (preserve original case)
+            actual = next((h for h in target_headers if h.lower() == k), None)
+            if actual:
+                key_columns.append(actual)
+
     if not key_columns:
-        key_columns = [c for c in target_headers if c in completed_idx][:2]
+        key_columns = [h for h in target_headers if h.lower() in completed_idx_lc][:2]
 
     def _key_from_row(row, index_map):
         if key_columns:

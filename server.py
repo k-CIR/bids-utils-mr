@@ -31,6 +31,25 @@ AUTH_TOKEN = os.environ.get("AUTH_TOKEN") or secrets.token_urlsafe(16)
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# ── Overview file ──────────────────────────────────────────────────────────────
+_OVERVIEW_FILE = None  # absolute path to ../*_overview.html, or None
+
+
+def _detect_overview_file():
+    """Locate a single *_overview.html one directory above this repo."""
+    global _OVERVIEW_FILE
+    parent = os.path.realpath(os.path.join(_SCRIPT_DIR, ".."))
+    try:
+        for fname in sorted(os.listdir(parent)):
+            if re.match(r'^[^/\\]+_overview\.html$', fname):
+                candidate = os.path.realpath(os.path.join(parent, fname))
+                if os.path.dirname(candidate) == parent and os.path.isfile(candidate):
+                    _OVERVIEW_FILE = candidate
+                    return
+    except Exception:
+        pass
+
+
 # ── Global server reference ────────────────────────────────────────────────────
 _httpd = None
 
@@ -198,7 +217,29 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         # ── Built-in infrastructure endpoints ──
         if path == '/api/tabs':
-            self._send_json([tab for tab in _TABS if _tab_is_visible(tab)])
+            visible = [tab for tab in _TABS if _tab_is_visible(tab)]
+            if _OVERVIEW_FILE and os.path.isfile(_OVERVIEW_FILE):
+                overview_tab = {
+                    "id": "overview",
+                    "label": "Project Overview",
+                    "order": -1,
+                    "type": "overview",
+                }
+                visible = [overview_tab] + visible
+            self._send_json(visible)
+            return
+
+        if path == '/overview-file':
+            if not _OVERVIEW_FILE or not os.path.isfile(_OVERVIEW_FILE):
+                self.send_error(404, "Overview file not found")
+                return
+            with open(_OVERVIEW_FILE, encoding="utf-8") as fh:
+                body = fh.read().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
 
         if path == '/tab-content':
@@ -297,6 +338,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    _detect_overview_file()
     _discover_tabs()
 
     if not _TABS:

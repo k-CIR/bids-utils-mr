@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Discover DICOM sessions and run dcm2bids in parallel worker processes."""
+import json
 import os
 import queue
 import re
@@ -7,6 +8,11 @@ import shutil
 import subprocess
 import sys
 import threading
+
+try:
+    import pydicom
+except ImportError:
+    pydicom = None
 
 
 def _find_executable(name):
@@ -82,6 +88,64 @@ def discover_sessions(dicom_root):
     return sessions
 
 
+def _read_dicom_metadata_from_folder(folder):
+    """Read DICOM metadata from first available DICOM file in folder.
+    
+    Returns dict with keys: series_description, series_number, protocol_name, 
+    modality, image_type, radiopharmaceutical. Returns empty dict if no DICOM found.
+    """
+    if not os.path.isdir(folder):
+        return {}
+    
+    if not pydicom:
+        # pydicom not available, return empty dict but don't fail
+        return {}
+    
+    for root, _, files in os.walk(folder):
+        for fname in files:
+            fpath = os.path.join(root, fname)
+            try:
+                ds = pydicom.dcmread(
+                    fpath,
+                    stop_before_pixels=True,
+                    force=True,
+                    specific_tags=["SeriesDescription", "SeriesNumber", "ProtocolName", 
+                                   "Modality", "ImageType", "Radiopharmaceutical"],
+                )
+                image_type_list = getattr(ds, "ImageType", None) or []
+                metadata = {
+                    "series_description": str(getattr(ds, "SeriesDescription", "") or "").strip(),
+                    "series_number": getattr(ds, "SeriesNumber", None),
+                    "protocol_name": str(getattr(ds, "ProtocolName", "") or "").strip(),
+                    "modality": str(getattr(ds, "Modality", "") or "").strip(),
+                    "image_type": ", ".join(str(x) for x in image_type_list),
+                    "radiopharmaceutical": str(getattr(ds, "Radiopharmaceutical", "") or "").strip(),
+                }
+                # Only return if we got at least the series description
+                if metadata.get("series_description"):
+                    return metadata
+            except Exception:
+                continue
+    
+    return {}
+
+
+def enrich_sessions_with_metadata(sessions):
+    """Augment session dicts with DICOM metadata from the folder.
+    
+    Returns new list of session dicts with added metadata fields.
+    """
+    enriched = []
+    for sess in sessions:
+        folder = sess.get("folder")
+        if folder and os.path.isdir(folder):
+            metadata = _read_dicom_metadata_from_folder(folder)
+            s = dict(sess)
+            s.update(metadata)
+            enriched.append(s)
+        else:
+            enriched.append(sess)
+    return enriched
 _jobs_lock = threading.Lock()
 _active_jobs = {}
 _job_counter = 0

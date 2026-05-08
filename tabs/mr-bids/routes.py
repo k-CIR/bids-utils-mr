@@ -109,11 +109,16 @@ def _get_default_helper_path():
 
 def _handle_get_config(h, params):
     default_path, warning = _get_default_helper_path()
+    config_rel = os.path.relpath(
+        os.path.realpath(config_builder.CONFIG_FILE),
+        os.path.realpath(_PROJECT_ROOT)
+    )
     h._send_json({
         "project_root": _PROJECT_ROOT,
         "default_path": default_path,
         "warning":      warning,
         "auth_token":   h.server._auth_token,
+        "config_file":  config_rel,
     })
 
 

@@ -11,24 +11,22 @@ import queue
 import time
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mGKHF]|\x1b\([A-Z]")
+
+
+def _strip_ansi(text):
+    return _ANSI_RE.sub("", text)
 
 
 def _find_executable(name):
     path = shutil.which(name)
     if path:
         return path
+    # Fall back to same directory as the current Python interpreter (handles
+    # conda envs where PATH may not be fully set at import time).
     candidate = os.path.join(os.path.dirname(os.path.realpath(sys.executable)), name)
     if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
         return candidate
-    home = os.path.expanduser("~")
-    for prefix in [
-        "/opt/anaconda3", "/opt/miniconda3", "/opt/conda",
-        os.path.join(home, "anaconda3"), os.path.join(home, "miniconda3"),
-        os.path.join(home, "mambaforge"), os.path.join(home, "miniforge3"),
-    ]:
-        c = os.path.join(prefix, "bin", name)
-        if os.path.isfile(c) and os.access(c, os.X_OK):
-            return c
     return None
 
 
@@ -209,7 +207,7 @@ def _run_single(job_id, sess, output_dir, config_file, clobber):
         )
         try:
             for line in proc.stdout:
-                _append_log(job_id, {"type": "line", "label": label, "text": line.rstrip("\n")})
+                _append_log(job_id, {"type": "line", "label": label, "text": _strip_ansi(line.rstrip("\n"))})
             proc.wait(timeout=600)
             rc = proc.returncode
         except subprocess.TimeoutExpired:

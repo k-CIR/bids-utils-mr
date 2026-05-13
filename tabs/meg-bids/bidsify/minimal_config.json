@@ -1,0 +1,9 @@
+{
+  "project_name": "My MEG Study",
+  "raw_dir": "raw/natmeg",
+  "bids_dir": "BIDS",
+  "tasks": ["rest", "task1", "task2"],
+  "calibration": "",
+  "crosstalk": "",
+  "overwrite": false
+}

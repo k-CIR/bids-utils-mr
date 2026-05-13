@@ -10,6 +10,12 @@ import os
 import re
 import subprocess
 
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mGKHF]|\x1b\([A-Z]")
+
+
+def _strip_ansi(text):
+    return _ANSI_RE.sub("", text)
+
 # Sibling modules live in the same directory
 import sys
 _TAB_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -56,18 +62,11 @@ def _find_executable(name):
     path = shutil.which(name)
     if path:
         return path
+    # Fall back to same directory as the current Python interpreter (handles
+    # conda envs where PATH may not be fully set at import time).
     candidate = os.path.join(os.path.dirname(os.path.realpath(sys.executable)), name)
     if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
         return candidate
-    home = os.path.expanduser("~")
-    for prefix in [
-        "/opt/anaconda3", "/opt/miniconda3", "/opt/conda",
-        os.path.join(home, "anaconda3"), os.path.join(home, "miniconda3"),
-        os.path.join(home, "mambaforge"), os.path.join(home, "miniforge3"),
-    ]:
-        c = os.path.join(prefix, "bin", name)
-        if os.path.isfile(c) and os.access(c, os.X_OK):
-            return c
     return None
 
 
@@ -109,11 +108,16 @@ def _get_default_helper_path():
 
 def _handle_get_config(h, params):
     default_path, warning = _get_default_helper_path()
+    config_rel = os.path.relpath(
+        os.path.realpath(config_builder.CONFIG_FILE),
+        os.path.realpath(_PROJECT_ROOT)
+    )
     h._send_json({
         "project_root": _PROJECT_ROOT,
         "default_path": default_path,
         "warning":      warning,
         "auth_token":   h.server._auth_token,
+        "config_file":  config_rel,
     })
 
 
@@ -187,7 +191,7 @@ def _handle_run_dcm2bids_helper(h, params):
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         try:
             for line in proc.stdout:
-                emit({"line": line.rstrip("\n")})
+                emit({"line": _strip_ansi(line.rstrip("\n"))})
             proc.wait(timeout=300)
             rc = proc.returncode
         except subprocess.TimeoutExpired:

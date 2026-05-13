@@ -154,6 +154,7 @@
 const mrBids = (() => {
   /* shared token reference — set by tabInit_mr_bids */
   let _token = null;
+  let _mrConfigFile = null;
 
   function _addToken(url) {
     if (!_token) return url;
@@ -746,7 +747,11 @@ const mrBids = (() => {
   async function runDcm2bids() {
     const dicomRel  = document.getElementById('bids-dicom-path').value.trim();
     const outputRel = document.getElementById('bids-output-path').value.trim();
-    const configRel = 'bids-utils-mr/dcm2bids_config_mr.json';
+    const configRel = _mrConfigFile;
+    if (!configRel) {
+      document.getElementById('bids-run-status').innerHTML = '<span class="t-err">Config file path not loaded. Please reload the page.</span>';
+      return;
+    }
     const workers   = parseInt(document.getElementById('bids-workers').value, 10) || 8;
     const clobber   = document.getElementById('bids-clobber').checked;
     const btn       = document.getElementById('run-bids-btn');
@@ -839,6 +844,9 @@ const mrBids = (() => {
           document.getElementById('bids-root-static').textContent     = cfg.project_root;
           document.getElementById('bids-out-static').textContent      = cfg.project_root;
           document.getElementById('bids-cfg-root-static').textContent = cfg.project_root;
+        }
+        if (cfg.config_file) {
+          _mrConfigFile = cfg.config_file;
         }
         if (cfg.default_path) {
           const displayPath = _normalizeDisplayPath(cfg.default_path);

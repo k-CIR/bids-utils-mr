@@ -246,6 +246,13 @@ def _resolve_top_level_derivatives_csv_path(rel_path):
     return None
 
 
+def _resolve_project_csv_path(rel_path):
+    full_path = _resolve_project_path(rel_path)
+    if not full_path or not full_path.lower().endswith(".csv"):
+        return None
+    return full_path
+
+
 def _resolve_project_path(rel_path):
     allowed = os.path.realpath(PROJECT_ROOT)
     rel_path = str(rel_path or "").strip()
@@ -414,6 +421,182 @@ def _find_completed_pet_sessions_files(max_count=200):
                 return csv_paths
 
     return csv_paths
+
+
+def _find_transfer_log_files(max_count=200):
+    csv_paths = []
+    seen = set()
+    utils_dir = os.path.join(PROJECT_ROOT, "utils")
+
+    if not os.path.isdir(utils_dir):
+        return csv_paths
+
+    for root, _dirs, files in os.walk(utils_dir):
+        for filename in sorted(files):
+            if not filename.lower().endswith("transfer_log.csv"):
+                continue
+            abs_path = os.path.join(root, filename)
+            if not os.path.isfile(abs_path):
+                continue
+
+            rel_path = os.path.relpath(abs_path, PROJECT_ROOT)
+            if rel_path in seen:
+                continue
+            seen.add(rel_path)
+            csv_paths.append(rel_path)
+            if len(csv_paths) >= max_count:
+                return csv_paths
+
+    csv_paths.sort()
+    return csv_paths
+
+
+
+def _find_petprep_container_files(max_count=200):
+    container_root = "/scratch/singularityContainers"
+    matches = []
+
+    if not os.path.isdir(container_root):
+        return matches
+
+    for root, _dirs, files in os.walk(container_root):
+        for filename in sorted(files):
+            if "petprep" not in filename.lower():
+                continue
+            abs_path = os.path.join(root, filename)
+            if not os.path.isfile(abs_path):
+                continue
+            matches.append(abs_path)
+            if len(matches) >= max_count:
+                return sorted(matches)
+
+    return sorted(matches)
+
+
+def _petprep_command_path():
+    return os.path.join(PROJECT_ROOT, "utils", "petprep_command.txt")
+
+
+def _petprep_run_log_path():
+    return os.path.join(PROJECT_ROOT, "utils", "petprep_run.log")
+
+
+def _petprep_run_pid_path():
+    return os.path.join(PROJECT_ROOT, "utils", "petprep_run.pid")
+
+
+def _pid_is_running(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _tail_text_file(path, max_lines=250):
+    if not os.path.isfile(path):
+        return ""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except Exception:
+        return ""
+    if max_lines and len(lines) > max_lines:
+        lines = lines[-max_lines:]
+    return "".join(lines)
+
+
+def _handle_get_petprep_container_files(h, params):
+    h._send_json({"container_files": _find_petprep_container_files()})
+
+
+def _handle_save_petprep_command(h, body):
+    command = str(body.get("command", "")).rstrip()
+    if not command:
+        h.send_error(400, "Missing command")
+        return
+
+    target = _petprep_command_path()
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    try:
+        with open(target, "w", encoding="utf-8", newline="") as f:
+            f.write(command)
+            if not command.endswith("\n"):
+                f.write("\n")
+    except Exception:
+        h.send_error(500, "Failed to save PETPrep command")
+        return
+
+    h._send_json({"ok": True, "path": os.path.relpath(target, PROJECT_ROOT)})
+
+
+def _handle_load_petprep_command(h, params):
+    target = _petprep_command_path()
+    if not os.path.isfile(target):
+        h.send_error(404, "PETPrep command not found")
+        return
+
+    try:
+        with open(target, "r", encoding="utf-8") as f:
+            command = f.read().strip()
+    except Exception:
+        h.send_error(500, "Failed to read PETPrep command")
+        return
+
+    h._send_json({"command": command, "path": os.path.relpath(target, PROJECT_ROOT)})
+
+
+def _handle_run_petprep_command(h, body):
+    command = str(body.get("command", "")).rstrip()
+    if not command:
+        h.send_error(400, "Missing command")
+        return
+
+    script_path = os.path.join(PROJECT_ROOT, "utils", "petprep_run.sh")
+    log_path = _petprep_run_log_path()
+    pid_path = _petprep_run_pid_path()
+    os.makedirs(os.path.dirname(script_path), exist_ok=True)
+    try:
+        with open(script_path, "w", encoding="utf-8", newline="") as f:
+            f.write("#!/bin/bash\nset -e\n")
+            f.write(command)
+            if not command.endswith("\n"):
+                f.write("\n")
+        os.chmod(script_path, 0o755)
+    except Exception:
+        h.send_error(500, "Failed to write run script")
+        return
+
+    try:
+        with open(log_path, "w", encoding="utf-8") as lf:
+            p = subprocess.Popen(["bash", script_path], stdout=lf, stderr=lf, cwd=PROJECT_ROOT)
+        with open(pid_path, "w", encoding="utf-8") as f:
+            f.write(str(p.pid) + "\n")
+    except Exception:
+        h.send_error(500, "Failed to start PETPrep command")
+        return
+
+    h._send_json({"ok": True, "pid": p.pid, "log": os.path.relpath(log_path, PROJECT_ROOT)})
+
+
+def _handle_get_petprep_run_log(h, params):
+    log_path = _petprep_run_log_path()
+    pid_path = _petprep_run_pid_path()
+    pid = None
+    running = False
+    if os.path.isfile(pid_path):
+        try:
+            with open(pid_path, "r", encoding="utf-8") as f:
+                pid_text = f.read().strip()
+            if pid_text:
+                pid = int(pid_text)
+                running = _pid_is_running(pid)
+        except Exception:
+            pid = None
+            running = False
+
+    content = _tail_text_file(log_path, max_lines=250)
+    h._send_json({"pid": pid, "running": running, "content": content, "log": os.path.relpath(log_path, PROJECT_ROOT)})
 
 
 def _get_csv_browser_config():
@@ -831,15 +1014,20 @@ def _handle_get_completed_sessions_files(h, params):
     h._send_json({"completed_files": completed_files})
 
 
+def _handle_get_transfer_log_files(h, params):
+    transfer_log_files = _find_transfer_log_files()
+    h._send_json({"transfer_log_files": transfer_log_files})
+
+
 def _handle_get_csv(h, params):
     rel_path = params.get("path", [None])[0]
     if not rel_path:
         h.send_error(400, "Missing path parameter")
         return
 
-    full_path = _resolve_top_level_derivatives_csv_path(rel_path)
+    full_path = _resolve_project_csv_path(rel_path)
     if not full_path:
-        h.send_error(400, "Path must be a .csv directly in derivatives")
+        h.send_error(400, "Path must be a .csv within the project root")
         return
     if not os.path.isfile(full_path):
         h.send_error(404, "File not found")
@@ -1036,9 +1224,9 @@ def _handle_save_target_file(h, body):
         h.send_error(400, "Missing path")
         return
 
-    full_path = _resolve_top_level_derivatives_csv_path(rel_path)
+    full_path = _resolve_project_csv_path(rel_path)
     if not full_path:
-        h.send_error(400, "Path must be a .csv directly in derivatives")
+        h.send_error(400, "Path must be a .csv within the project root")
         return
 
     if not headers and os.path.isfile(full_path):
@@ -1071,9 +1259,9 @@ def _handle_reset_target_file(h, body):
         h.send_error(400, "Missing path")
         return
 
-    full_path = _resolve_top_level_derivatives_csv_path(rel_path)
+    full_path = _resolve_project_csv_path(rel_path)
     if not full_path:
-        h.send_error(400, "Path must be a .csv directly in derivatives")
+        h.send_error(400, "Path must be a .csv within the project root")
         return
 
     if os.path.isfile(full_path):
@@ -1104,11 +1292,11 @@ def _handle_merge_completed_sessions(h, body):
         h.send_error(400, "Missing target_path or completed_path")
         return
 
-    target_full = _resolve_top_level_derivatives_csv_path(target_rel)
+    target_full = _resolve_project_csv_path(target_rel)
     completed_full = _resolve_top_level_derivatives_csv_path(completed_rel)
 
     if not target_full:
-        h.send_error(400, "Target path must be a .csv directly in derivatives")
+        h.send_error(400, "Target path must be a .csv within the project root")
         return
     if not completed_full:
         h.send_error(400, "Completed path must be a .csv directly in derivatives")
@@ -1266,13 +1454,20 @@ def register(get_routes, post_routes):
     get_routes["/open-file"] = _handle_open_file
     get_routes["/get-csv-config"] = _handle_get_csv_config
     get_routes["/get-completed-sessions-files"] = _handle_get_completed_sessions_files
+    get_routes["/pet-get-transfer-log-files"] = _handle_get_transfer_log_files
+    get_routes["/petprep-get-container-files"] = _handle_get_petprep_container_files
+    get_routes["/petprep-load-command"] = _handle_load_petprep_command
+    get_routes["/petprep-run-log"] = _handle_get_petprep_run_log
     get_routes["/get-csv"] = _handle_get_csv
     get_routes["/load-target-file"] = _handle_load_target_file
+    
+    post_routes["/petprep-run-command"] = _post_wrapper(_handle_run_petprep_command)
 
     post_routes["/update-csv-cell"] = _post_wrapper(_post_update_csv_cell)
     post_routes["/pet-save-bids-config"] = _post_wrapper(_handle_save_bids_config)
     post_routes["/pet-save-recode-table"] = _post_wrapper(_handle_save_recode_table)
     post_routes["/pet-run-dcm2bids"] = _post_wrapper(_handle_run_dcm2bids)
     post_routes["/save-target-file"] = _post_wrapper(_post_save_target_file)
+    post_routes["/petprep-save-command"] = _post_wrapper(_handle_save_petprep_command)
     post_routes["/reset-target-file"] = _post_wrapper(_post_reset_target_file)
     post_routes["/merge-completed-sessions"] = _post_wrapper(_post_merge_completed_sessions)

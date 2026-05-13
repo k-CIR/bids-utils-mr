@@ -31,11 +31,31 @@ _TAB_DIR = os.path.dirname(os.path.abspath(__file__))
 def _detect_project_root(script_dir):
     """Return /data/projects/<project> for nested repo locations."""
     resolved = os.path.realpath(script_dir)
+    
+    # Primary: match /data/projects/<project>
     match = re.match(r"^(/data/projects/[^/]+)(?:/|$)", resolved)
     if match:
-        return match.group(1)
-    # Fallback: tab dir is <project>/bids-utils-mr/tabs/<tab>
-    return os.path.realpath(os.path.join(script_dir, "..", "..", ".."))
+        project_root = match.group(1)
+        # Verify it's a valid directory
+        if os.path.isdir(project_root):
+            return project_root
+    
+    # Fallback: tab dir is typically <project>/cir-utils/tabs/<tab>
+    # Go up 3 levels from script_dir to reach <project>
+    fallback = os.path.realpath(os.path.join(script_dir, "..", "..", ".."))
+    
+    # Verify fallback path is valid and contains expected structure
+    if os.path.isdir(fallback) and os.path.basename(fallback) in os.listdir('/data/projects'):
+        return fallback
+    
+    # Last resort: return at least the /data/projects/<name> if we can extract it
+    if '/data/projects/' in resolved:
+        parts = resolved.split('/')
+        if len(parts) > 3:  # /data/projects/<name>/...
+            return '/'.join(parts[:4])  # /data/projects/<name>
+    
+    # Absolute fallback
+    return fallback
 
 _CFG_PATH = os.path.join(_TAB_DIR, "config_builder.py")
 _CFG_SPEC = importlib.util.spec_from_file_location("pet_bids_config_builder", _CFG_PATH)

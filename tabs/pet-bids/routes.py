@@ -22,7 +22,7 @@ TAB_METADATA = {
     "id": "pet-bids",
     "label": "PET BIDS",
     "order": 1,
-    "requires_path": "raw/bmic",
+    "requires_path": "raw/pet",
 }
 
 _TAB_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -56,7 +56,7 @@ pet2bids_runner = importlib.util.module_from_spec(_PET_RUNNER_SPEC)
 _PET_RUNNER_SPEC.loader.exec_module(pet2bids_runner)
 
 PROJECT_ROOT = _detect_project_root(_TAB_DIR)
-_RAW_PET_HELPER_DIR = os.path.join(PROJECT_ROOT, "raw", "bmic")
+_RAW_PET_HELPER_DIR = os.path.join(PROJECT_ROOT, "raw", "pet")
 _OUTPUT_DIR = os.path.join(_TAB_DIR, "dcm2bids_helper")
 
 _CSV_RAW_PET_DIR = os.path.join(PROJECT_ROOT, "BIDS")
@@ -287,7 +287,7 @@ def _handle_run_dcm2bids_helper_pet(h, params):
 
     pet_root = os.path.realpath(_RAW_PET_HELPER_DIR)
     if not (full_path == pet_root or full_path.startswith(pet_root + os.sep)):
-        h.send_error(403, "Path must be inside raw/bmic for PET helper")
+        h.send_error(403, "Path must be inside raw/pet for PET helper")
         return
 
     h.send_response(200)
